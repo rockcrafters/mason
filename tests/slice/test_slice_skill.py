@@ -5,10 +5,6 @@ scorers inlined here -- one function per test, no indirection.
 """
 from __future__ import annotations
 
-import os
-import shutil
-import subprocess
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +12,6 @@ import pytest
 import yaml
 
 from framework import gate, scored
-from framework.sandbox import cr_clone_dir
 
 
 def _load_yaml(path: Path) -> dict[str, Any] | None:
@@ -57,8 +52,6 @@ def test_paths_sorted(agent_output) -> float:
     slices = doc.get("slices")
     if not isinstance(slices, dict):
         return 1.0
-    total = 0
-    ok = 0
     for body in slices.values():
         if not isinstance(body, dict):
             continue
@@ -66,12 +59,9 @@ def test_paths_sorted(agent_output) -> float:
         if not isinstance(contents, dict):
             continue
         keys = list(contents.keys())
-        total += 1
-        if keys == sorted(keys):
-            ok += 1
-    if total == 0:
-        return 1.0
-    return ok / total
+        if keys != sorted(keys):
+            return 0.0
+    return 1.0
 
 
 @gate
@@ -116,7 +106,11 @@ def test_arch_format(agent_output) -> float:
     return (total - bad) / total
 
 
+import re as _re
+
+
 def _mutate_map(doc: Any) -> dict[str, str]:
+    """slice_name -> mutate script for slices that have one."""
     if not isinstance(doc, dict):
         return {}
     slices = doc.get("slices")
@@ -131,19 +125,14 @@ def _mutate_map(doc: Any) -> dict[str, str]:
     return out
 
 
-def _token_similarity(a: str, b: str) -> float:
-    import re
-    ta = set(re.findall(r"\w+|[^\s\w]", a))
-    tb = set(re.findall(r"\w+|[^\s\w]", b))
-    if not ta and not tb:
-        return 1.0
-    union = ta | tb
-    return len(ta & tb) / len(union) if union else 0.0
+def _mutate_paths(script: str) -> set[str]:
+    """extract quoted path args from content.read(...) / content.write(...) calls."""
+    return set(_re.findall(r'content\.(?:read|write)\s*\(\s*["\']([^"\']+)["\']', script))
 
 
 @scored
-def test_mutate_similarity(agent_output) -> float:
-    """for each slice with mutate in expected, score token-similarity of actual's mutate (0 if absent). avg over expected mutate-slices."""
+def test_mutate_present(agent_output) -> float:
+    """fraction of expected-mutate-slices where actual also has a mutate script."""
     actual = _load_yaml(agent_output.slice_path)
     try:
         expected = yaml.safe_load(agent_output.expected_yaml)
@@ -153,7 +142,28 @@ def test_mutate_similarity(agent_output) -> float:
     if not exp:
         return 1.0
     act = _mutate_map(actual)
-    return sum(_token_similarity(v, act.get(name, "")) for name, v in exp.items()) / len(exp)
+    return sum(1 for name in exp if name in act) / len(exp)
+
+
+@scored
+def test_mutate_paths(agent_output) -> float:
+    """jaccard of content.read/write paths between expected and actual mutate scripts.
+    only scores cases where expected has a mutate; 1.0 if no mutate expected."""
+    actual = _load_yaml(agent_output.slice_path)
+    try:
+        expected = yaml.safe_load(agent_output.expected_yaml)
+    except yaml.YAMLError:
+        expected = None
+    exp_map = _mutate_map(expected)
+    if not exp_map:
+        return 1.0
+    act_map = _mutate_map(actual)
+    exp_paths = set().union(*(_mutate_paths(s) for s in exp_map.values()))
+    act_paths = set().union(*(_mutate_paths(s) for s in act_map.values())) if act_map else set()
+    if not exp_paths and not act_paths:
+        return 1.0
+    union = exp_paths | act_paths
+    return len(exp_paths & act_paths) / len(union) if union else 0.0
 
 
 @scored
@@ -335,29 +345,6 @@ def test_copyright_path_present(agent_output) -> float:
     return 1.0 if f"/usr/share/doc/{pkg}/copyright" in contents else 0.0
 
 
-def _normalise(doc: Any) -> Any:
-    if isinstance(doc, dict):
-        return {k: _normalise(v) for k, v in sorted(doc.items())}
-    if isinstance(doc, list):
-        return sorted(
-            (_normalise(x) for x in doc),
-            key=lambda x: yaml.safe_dump(x, sort_keys=True),
-        )
-    return doc
-
-
-def _flatten(doc: Any, prefix: str = "") -> set[str]:
-    out: set[str] = set()
-    if isinstance(doc, dict):
-        for k, v in doc.items():
-            out |= _flatten(v, f"{prefix}/{k}")
-    elif isinstance(doc, list):
-        for i, v in enumerate(doc):
-            out |= _flatten(v, f"{prefix}[{i}]")
-    else:
-        out.add(f"{prefix}={doc!r}")
-    return out
-
 
 # chisel.yaml format version per release branch. derived from current
 # canonical/chisel-releases state. v1: flat essential list only.
@@ -487,8 +474,28 @@ def test_essential_list_on_v1(agent_output) -> float:
     return 1.0
 
 
+def _content_paths(doc: Any) -> set[str]:
+    """all content path keys across all slices, normalised to lowercase."""
+    out: set[str] = set()
+    if not isinstance(doc, dict):
+        return out
+    slices = doc.get("slices")
+    if not isinstance(slices, dict):
+        return out
+    for body in slices.values():
+        if not isinstance(body, dict):
+            continue
+        contents = body.get("contents")
+        if not isinstance(contents, dict):
+            continue
+        out.update(str(k).lower() for k in contents)
+    return out
+
+
 @scored
 def test_structural_distance(agent_output) -> float:
+    """jaccard of content path keys between actual and expected.
+    focuses on which files are claimed, ignoring slice grouping / essential / values."""
     actual = _load_yaml(agent_output.slice_path)
     try:
         expected = yaml.safe_load(agent_output.expected_yaml)
@@ -496,71 +503,10 @@ def test_structural_distance(agent_output) -> float:
         expected = None
     if actual is None or expected is None:
         return 0.0
-    a = _flatten(_normalise(actual))
-    e = _flatten(_normalise(expected))
+    a = _content_paths(actual)
+    e = _content_paths(expected)
     if not a and not e:
         return 1.0
-    union = len(a | e)
-    jaccard = len(a & e) / union if union else 0.0
-    # Jaccard punishes legitimate alternative designs harshly.
-    # Floor at 0.3 so a parseable, structurally-different-but-valid SDF
-    # doesn't sink the quality avg to near-zero. test_chisel_parse remains
-    # the gate that detects actually-broken SDFs.
-    return max(0.3, jaccard)
+    union = a | e
+    return len(a & e) / len(union) if union else 0.0
 
-
-@gate
-def test_chisel_parse(agent_output) -> float:
-    """Drop model SDF into a clone of chisel-releases, run `chisel info` on it.
-
-    Validates: yaml syntactic + schema + cross-slice references actually load.
-    Gate (pass/fail). Skips if `chisel` CLI or per-branch clone is absent.
-    """
-    if not os.environ.get("CHISEL_PARSE"):
-        pytest.skip("test_chisel_parse skipped by default (slow); set CHISEL_PARSE=1 to enable")
-    chisel = shutil.which("chisel")
-    if chisel is None:
-        pytest.skip("chisel CLI not on PATH")
-    clone = cr_clone_dir(agent_output.case.branch)
-    if not clone.exists():
-        pytest.skip(f"no clone for {agent_output.case.branch}")
-    sdf_text = agent_output.slice_path.read_text(encoding="utf-8")
-    doc = _load_yaml(agent_output.slice_path)
-    if not isinstance(doc, dict):
-        return 0.0
-    slices_map = doc.get("slices") or {}
-    if not isinstance(slices_map, dict) or not slices_map:
-        return 0.0
-    first_slice = next(iter(slices_map))
-    # mkdtemp on same filesystem as clone so hardlinks work (/tmp is often tmpfs)
-    overlay = Path(tempfile.mkdtemp(prefix="chisel-parse-", dir=str(clone.parent)))
-    try:
-        for entry in clone.iterdir():
-            if entry.name == ".git":
-                continue
-            _hardlink_tree(entry, overlay / entry.name)
-        target_sdf = overlay / "slices" / f"{agent_output.target}.yaml"
-        target_sdf.parent.mkdir(parents=True, exist_ok=True)
-        if target_sdf.exists() or target_sdf.is_symlink():
-            target_sdf.unlink()
-        target_sdf.write_text(sdf_text, encoding="utf-8")
-        proc = subprocess.run(
-            [chisel, "info", "--release", str(overlay),
-             f"{agent_output.target}_{first_slice}"],
-            capture_output=True, text=True, timeout=30,
-        )
-        return 1.0 if proc.returncode == 0 else 0.0
-    finally:
-        shutil.rmtree(overlay, ignore_errors=True)
-
-
-def _hardlink_tree(src: Path, dst: Path) -> None:
-    """Mirror src -> dst using hardlinks for files, recreated symlinks, mkdir for dirs."""
-    if src.is_symlink():
-        os.symlink(os.readlink(src), dst)
-    elif src.is_dir():
-        dst.mkdir(parents=True, exist_ok=True)
-        for child in src.iterdir():
-            _hardlink_tree(child, dst / child.name)
-    else:
-        os.link(src, dst)

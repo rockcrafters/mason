@@ -11,4 +11,4 @@ dependencies = [
 
 [tool.pytest.ini_options]
 testpaths = ["."]
-addopts = "-ra"
+addopts = "-rN"

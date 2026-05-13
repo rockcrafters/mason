@@ -52,6 +52,10 @@ class Run:
         )
 
     @property
+    def duration_s(self) -> float:
+        return float(self.metadata.get("duration_s", 0.0))
+
+    @property
     def slice_path(self) -> Path:
         return self.result_path
 

@@ -151,7 +151,10 @@ class _Progress:
                     self.tool_count += 1
                     name = block.get("name", "?")
                     inp = block.get("input") or {}
-                    summary = ", ".join(f"{k}={_oneline(repr(v))}" for k, v in inp.items())
+                    def _fmt_val(v: Any, cap: int = 512) -> str:
+                        s = _oneline(repr(v))
+                        return s if len(s) <= cap else s[:cap] + f"...[+{len(s)-cap}]"
+                    summary = ", ".join(f"{k}={_fmt_val(v)}" for k, v in inp.items())
                     log.info(
                         "%s%s tool[%d]: %s(%s)",
                         self.tag, self._stamp(), self.tool_count, name, summary,

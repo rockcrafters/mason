@@ -61,9 +61,11 @@ class _Row:
     scored: bool
     gate: bool = False
     slug: str | None = None
+    duration: float = 0.0
 
 
 _RESULTS_KEY: pytest.StashKey[list[_Row]] = pytest.StashKey()
+_SKIP_COUNTS_KEY: pytest.StashKey[dict[str, int]] = pytest.StashKey()
 
 
 def pytest_configure(config: "Config") -> None:
@@ -76,6 +78,7 @@ def pytest_configure(config: "Config") -> None:
         "gate: scored test acting as a compliance gate; excluded from quality avg",
     )
     config.stash[_RESULTS_KEY] = []
+    config.stash[_SKIP_COUNTS_KEY] = {}
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -168,8 +171,7 @@ def pytest_runtest_call(item: "Item"):
 
     item.obj = wrapper
     try:
-        outcome = yield
-        outcome.get_result()
+        yield
     finally:
         item.obj = original
 
@@ -193,9 +195,17 @@ def pytest_runtest_call(item: "Item"):
 def pytest_runtest_makereport(item: "Item", call):
     outcome = yield
     report: TestReport = outcome.get_result()
-    if report.when != "call":
-        return
     if report.skipped:
+        reason = getattr(report, "wasxfail", None) or ""
+        if not reason:
+            longrepr = report.longrepr
+            reason = (
+                str(longrepr[-1]) if isinstance(longrepr, tuple) else str(longrepr)
+            ).strip()
+        counts: dict[str, int] = item.config.stash[_SKIP_COUNTS_KEY]
+        counts[reason] = counts.get(reason, 0) + 1
+        return
+    if report.when != "call":
         return
     scored = _is_scored(item)
     if scored:
@@ -206,10 +216,22 @@ def pytest_runtest_makereport(item: "Item", call):
     else:
         score = 1.0 if report.passed else 0.0
         params = _extract_params(item)
+    # prefer agent run duration from a param with .duration_s (e.g. Run);
+    # fall back to pytest's own execution time.
+    run_dur: float | None = None
+    callspec = getattr(item, "callspec", None)
+    if callspec:
+        for v in callspec.params.values():
+            d = getattr(v, "duration_s", None)
+            if isinstance(d, (int, float)) and not isinstance(d, bool):
+                run_dur = float(d)
+                break
+    duration = run_dur if run_dur is not None else float(getattr(report, "duration", 0.0) or 0.0)
     rows: list[_Row] = item.config.stash[_RESULTS_KEY]
     rows.append(_Row(
         nodeid=report.nodeid, score=score, params=params,
         scored=scored, gate=_is_gate(item), slug=_slug_for(item),
+        duration=duration,
     ))
 
 
@@ -253,9 +275,10 @@ def _fmt_cell(score: float | None, bar_w: int, *, color: bool) -> str:
     return text
 
 
-def _fmt_score_bar(score: float, width: int, *, color: bool) -> str:
-    """Legacy single-column formatter (used in axis avgs + overall)."""
-    text = f"{score:5.2f}  {_bar(score, width)}"
+def _fmt_score_bar(score: float, width: int, *, color: bool, std: float | None = None) -> str:
+    """Single-column formatter (used in axis avgs + overall)."""
+    pm = f" (+/-{std:.2f})" if std is not None else ""
+    text = f"{score:5.2f}{pm}  {_bar(score, width)}"
     if not color:
         return text
     return f"{_color_for(score)}{text}{_RESET}"
@@ -309,17 +332,22 @@ def _row_label(r: _Row) -> str:
     return base
 
 
-def _group_averages(rows: list[_Row]) -> dict[str, dict[str, tuple[float, int]]]:
+def _group_averages(rows: list[_Row]) -> dict[str, dict[str, tuple[float, float, int]]]:
     keys: set[str] = set()
     for r in rows:
         keys.update(r.params.keys())
-    out: dict[str, dict[str, tuple[float, int]]] = {}
+    out: dict[str, dict[str, tuple[float, float, int]]] = {}
     for k in sorted(keys):
         buckets: dict[str, list[float]] = defaultdict(list)
         for r in rows:
             if k in r.params:
                 buckets[r.params[k]].append(r.score)
-        out[k] = {v: (sum(s) / len(s), len(s)) for v, s in buckets.items()}
+        def _stats(s: list[float]) -> tuple[float, float, int]:
+            n = len(s)
+            avg = sum(s) / n
+            std = (sum((x - avg) ** 2 for x in s) / n) ** 0.5
+            return avg, std, n
+        out[k] = {v: _stats(s) for v, s in buckets.items()}
     return out
 
 
@@ -447,18 +475,20 @@ def pytest_terminal_summary(terminalreporter: "TerminalReporter") -> None:
     for axis, vals in groups.items():
         tr.write_sep("-", f"quality avg by {axis}")
         val_w = max((len(v) for v in vals), default=10)
-        for v, (avg, n) in sorted(vals.items(), key=lambda kv: kv[1][0]):
+        for v, (avg, std, n) in sorted(vals.items(), key=lambda kv: kv[1][0]):
             tr.write_line(
                 f"  {v.ljust(val_w)}  avg (n={n})  "
-                f"{_fmt_score_bar(avg, bar_w_g, color=color)}"
+                f"{_fmt_score_bar(avg, bar_w_g, color=color, std=std)}"
             )
             if threshold is not None and avg < threshold:
                 failures.append(f"{axis}={v} avg {avg:.2f} < {threshold}")
 
-    overall = sum(r.score for r in quality_rows) / len(quality_rows) if quality_rows else 0.0
+    quality_scores = [r.score for r in quality_rows]
+    overall = sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
+    overall_std = (sum((x - overall) ** 2 for x in quality_scores) / len(quality_scores)) ** 0.5 if quality_scores else 0.0
     tr.write_sep("-", "overall (quality only)")
     tr.write_line(
-        f"  avg (n={len(quality_rows)})  {_fmt_score_bar(overall, bar_w_g, color=color)}"
+        f"  avg (n={len(quality_rows)})  {_fmt_score_bar(overall, bar_w_g, color=color, std=overall_std)}"
     )
 
     gp, gt = _gate_stats(rows)
@@ -468,6 +498,69 @@ def pytest_terminal_summary(terminalreporter: "TerminalReporter") -> None:
         tr.write_line(
             f"  passed {gp}/{gt}  {_fmt_score_bar(rate, bar_w_g, color=color)}"
         )
+
+    skip_counts: dict[str, int] = config.stash.get(_SKIP_COUNTS_KEY, {})
+    if skip_counts:
+        total_skipped = sum(skip_counts.values())
+        # normalise: strip "Skipped: " prefix, drop trailing per-run details
+        # so e.g. "no result for X/Y/Z -- run `make run`" -> "no result (run `make run`)"
+        def _norm_reason(r: str) -> str:
+            r = r.removeprefix("Skipped: ").strip()
+            if " -- " in r:
+                prefix, _, suffix = r.partition(" -- ")
+                # drop per-run identifiers in the prefix (everything after first space-separated word-group)
+                first_clause = prefix.split(" for ")[0] if " for " in prefix else prefix
+                return f"{first_clause} ({suffix})"
+            return r
+        normalised: dict[str, int] = {}
+        for reason, n in skip_counts.items():
+            key = _norm_reason(reason)
+            normalised[key] = normalised.get(key, 0) + n
+        parts = ", ".join(
+            f"{n}x {r}" for r, n in sorted(normalised.items(), key=lambda kv: -kv[1])
+        )
+        tr.write_line(f"  skipped {total_skipped}: {parts}")
+
+    # ---- per-run runtime report ----
+    # durations are run-level (same value for every test in a run), so
+    # deduplicate by (model, case) before summing or ranking.
+    def _fmt_dur(d: float) -> str:
+        if d >= 1.0:
+            return f"{d:8.3f}s "
+        if d >= 1e-3:
+            return f"{d * 1e3:8.3f}ms"
+        return f"{d * 1e6:8.1f}us"
+
+    tr.write_sep("=", "RUN DURATIONS")
+    seen_runs: set[tuple[str, str]] = set()
+    by_model: dict[str, float] = defaultdict(float)
+    by_model_n: dict[str, int] = defaultdict(int)
+    run_cells: list[tuple[str, str, float]] = []  # (model, case, duration)
+    for r in rows:
+        m = r.params.get("model", "")
+        case = r.params.get("case", "")
+        run_key = (m, case)
+        if run_key in seen_runs:
+            continue
+        seen_runs.add(run_key)
+        by_model[m] += r.duration
+        by_model_n[m] += 1
+        run_cells.append((m, case or _row_label(r), r.duration))
+    if by_model:
+        m_w = max(len(m) for m in by_model)
+        for m, total in sorted(by_model.items(), key=lambda kv: -kv[1]):
+            n = by_model_n[m]
+            avg = total / n if n else 0.0
+            tr.write_line(f"  {m.ljust(m_w)}  n={n:<3}  total={_fmt_dur(total)}  avg={_fmt_dur(avg)}")
+    top_n = 15
+    slowest = sorted(run_cells, key=lambda c: -c[2])[:top_n]
+    if slowest:
+        tr.write_sep("-", f"top {len(slowest)} slowest (model x case)")
+        m_w = max(len(c[0]) for c in slowest) or 1
+        k_w = min(60, max(len(c[1]) for c in slowest))
+        for m, key, d in slowest:
+            la = key if len(key) <= k_w else key[: k_w - 3] + "..."
+            tr.write_line(f"  {m.ljust(m_w)}  {la.ljust(k_w)}  {_fmt_dur(d)}")
 
     out_path = config.getoption("--scored-report")
     if out_path:
@@ -502,7 +595,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         return
     groups = _group_averages(quality_rows)
     for vals in groups.values():
-        for avg, _n in vals.values():
+        for avg, _std, _n in vals.values():
             if avg < threshold:
                 if session.exitstatus == 0:
                     session.exitstatus = 1
@@ -527,11 +620,21 @@ def _write_json_report(
                 "scored": r.scored,
                 "gate": r.gate,
                 "params": r.params,
+                "duration_s": r.duration,
             }
             for r in rows
         ],
+        "durations": {
+            "by_model": {
+                m: {
+                    "total_s": sum(r.duration for r in rows if r.params.get("model", "") == m),
+                    "n": sum(1 for r in rows if r.params.get("model", "") == m),
+                }
+                for m in sorted({r.params.get("model", "") for r in rows})
+            },
+        },
         "groups": {
-            axis: {v: {"avg": avg, "n": n} for v, (avg, n) in vals.items()}
+            axis: {v: {"avg": avg, "std": std, "n": n} for v, (avg, std, n) in vals.items()}
             for axis, vals in groups.items()
         },
         "overall": {"avg": overall, "n": quality_n},

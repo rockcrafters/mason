@@ -10,7 +10,7 @@ backend: claude
 models:
   - id: claude-haiku-4-5-20251001
   - id: claude-sonnet-4-6
-  - id: claude-opus-4-7
+  # - id: claude-opus-4-7
 
 timeout_seconds: 600
 stuck_timeout_seconds: 300
