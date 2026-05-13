@@ -225,6 +225,14 @@ Testing is mandatory. Depth depends on what the package provides.
 
 #### Manual testing (always do this first)
 
+Use the bundled `try-cut` helper to run a cut from the current checkout without managing the temp root manually:
+
+```bash
+try-cut [--arch ARCH] <package>_<slice>
+```
+
+Or manually:
+
 ```bash
 mkdir rootfs/
 chisel cut --release ./ --root rootfs/ <package>_<slice>

@@ -5,7 +5,9 @@ wip. agent kit for working on [`canonical/chisel-releases`](https://github.com/c
 ## what's in here
 
 - `skills/` -- claude code skills. each `skills/<name>/SKILL.md` is a self-contained briefing the agent loads on demand. current skills:
-    - `slice/` -- how to author chisel slice definition files (sdfs). covers `chisel.yaml` schema versions, sdf keys, content path options, `mutate:`/starlark semantics, reviewer conventions, ci checks, forward-port chains, multiarch quirks. stops at local commits -- does not open prs. includes `deb-list` helper to inspect deb package contents before authoring.
+    - `slice/` -- how to author chisel slice definition files (sdfs). covers `chisel.yaml` schema versions, sdf keys, content path options, `mutate:`/starlark semantics, reviewer conventions, ci checks, forward-port chains, multiarch quirks. stops at local commits -- does not open prs. includes two helpers:
+        - `deb-list` -- inspect deb package contents before authoring. usage: `deb-list <package> [arch] [--scripts]`.
+        - `try-cut` -- test slices against the current chisel-releases checkout. creates a temp root and runs `chisel cut --release . --root <tmpdir>`, passing output through unchanged. usage: `try-cut [--arch ARCH] <pkg>_<slice> [...]`.
 
 more skills + agents to come; see commit history for what's landed.
 
