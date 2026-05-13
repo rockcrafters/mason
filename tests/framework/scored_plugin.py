@@ -277,7 +277,7 @@ def _fmt_cell(score: float | None, bar_w: int, *, color: bool) -> str:
 
 def _fmt_score_bar(score: float, width: int, *, color: bool, std: float | None = None) -> str:
     """Single-column formatter (used in axis avgs + overall)."""
-    pm = f" (+/-{std:.2f})" if std is not None else ""
+    pm = f" (±{std:.2f})" if std is not None else ""
     text = f"{score:5.2f}{pm}  {_bar(score, width)}"
     if not color:
         return text
@@ -345,8 +345,8 @@ def _group_averages(rows: list[_Row]) -> dict[str, dict[str, tuple[float, float,
         def _stats(s: list[float]) -> tuple[float, float, int]:
             n = len(s)
             avg = sum(s) / n
-            std = (sum((x - avg) ** 2 for x in s) / n) ** 0.5
-            return avg, std, n
+            sem = (sum((x - avg) ** 2 for x in s) / n) ** 0.5 / n ** 0.5
+            return avg, sem, n
         out[k] = {v: _stats(s) for v, s in buckets.items()}
     return out
 
@@ -485,7 +485,8 @@ def pytest_terminal_summary(terminalreporter: "TerminalReporter") -> None:
 
     quality_scores = [r.score for r in quality_rows]
     overall = sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
-    overall_std = (sum((x - overall) ** 2 for x in quality_scores) / len(quality_scores)) ** 0.5 if quality_scores else 0.0
+    n_q = len(quality_scores)
+    overall_std = (sum((x - overall) ** 2 for x in quality_scores) / n_q) ** 0.5 / n_q ** 0.5 if quality_scores else 0.0
     tr.write_sep("-", "overall (quality only)")
     tr.write_line(
         f"  avg (n={len(quality_rows)})  {_fmt_score_bar(overall, bar_w_g, color=color, std=overall_std)}"
