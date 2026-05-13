@@ -5,12 +5,18 @@ scorers inlined here -- one function per test, no indirection.
 """
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
-from framework import scored
+from framework import gate, scored
+from framework.sandbox import cr_clone_dir
 
 
 def _load_yaml(path: Path) -> dict[str, Any] | None:
@@ -22,7 +28,7 @@ def _load_yaml(path: Path) -> dict[str, Any] | None:
         return None
 
 
-@scored
+@gate
 def test_target_present(run) -> float:
     """Did the agent produce a file for this target at all? Runs even when
     the file is missing (no skip), so scoring captures cascade-completeness
@@ -30,12 +36,12 @@ def test_target_present(run) -> float:
     return 1.0 if run.result_path.exists() and run.result_path.stat().st_size > 0 else 0.0
 
 
-@scored
+@gate
 def test_yaml_parses(agent_output) -> float:
     return 1.0 if _load_yaml(agent_output.slice_path) is not None else 0.0
 
 
-@scored
+@gate
 def test_filename_matches_package(agent_output) -> float:
     doc = _load_yaml(agent_output.slice_path)
     if not isinstance(doc, dict):
@@ -43,7 +49,7 @@ def test_filename_matches_package(agent_output) -> float:
     return 1.0 if doc.get("package") == agent_output.slice_path.stem else 0.0
 
 
-@scored
+@gate
 def test_paths_sorted(agent_output) -> float:
     doc = _load_yaml(agent_output.slice_path)
     if not isinstance(doc, dict):
@@ -68,7 +74,7 @@ def test_paths_sorted(agent_output) -> float:
     return ok / total
 
 
-@scored
+@gate
 def test_copyright_essential(agent_output) -> float:
     doc = _load_yaml(agent_output.slice_path)
     if not isinstance(doc, dict):
@@ -81,7 +87,7 @@ def test_copyright_essential(agent_output) -> float:
     return 1.0 if f"{pkg}_copyright" in essential else 0.0
 
 
-@scored
+@gate
 def test_arch_format(agent_output) -> float:
     p = agent_output.slice_path
     if not p.exists():
@@ -310,7 +316,7 @@ def test_slice_names_canonical(agent_output) -> float:
     return ok / len(slices)
 
 
-@scored
+@gate
 def test_copyright_path_present(agent_output) -> float:
     """copyright slice must contain /usr/share/doc/<pkg>/copyright."""
     doc = _load_yaml(agent_output.slice_path)
@@ -381,7 +387,7 @@ def _iter_slice_bodies(doc: Any):
             yield name, body
 
 
-@scored
+@gate
 def test_v3_essential_format_compat(agent_output) -> float:
     """`v3-essential:` is only valid on chisel.yaml format v2 branches.
     On v3 branches the arch-gated map form goes under `essential:` directly.
@@ -398,7 +404,7 @@ def test_v3_essential_format_compat(agent_output) -> float:
     return 0.0 if uses_v3e else 1.0
 
 
-@scored
+@gate
 def test_essential_map_format_compat(agent_output) -> float:
     """`essential:` as a map (with per-entry options like `{arch: [...]}`)
     is v3-only. On v1/v2 `essential:` must be a flat list of strings."""
@@ -420,7 +426,7 @@ def test_essential_map_format_compat(agent_output) -> float:
     return 0.0 if map_seen else 1.0
 
 
-@scored
+@gate
 def test_hint_format_compat(agent_output) -> float:
     """`hint:` on a slice body is v3-only."""
     fmt = _branch_format(agent_output)
@@ -435,7 +441,7 @@ def test_hint_format_compat(agent_output) -> float:
     return 0.0 if has_hint else 1.0
 
 
-@scored
+@gate
 def test_prefer_format_compat(agent_output) -> float:
     """`prefer:` on a content entry is v2+ only."""
     fmt = _branch_format(agent_output)
@@ -460,7 +466,7 @@ def test_prefer_format_compat(agent_output) -> float:
     return 0.0 if has_prefer else 1.0
 
 
-@scored
+@gate
 def test_essential_list_on_v1(agent_output) -> float:
     """On v1 branches per-slice `essential:` must be a flat list of strings,
     not a map. Catches v3-style entries written against an old branch."""
@@ -495,4 +501,66 @@ def test_structural_distance(agent_output) -> float:
     if not a and not e:
         return 1.0
     union = len(a | e)
-    return len(a & e) / union if union else 0.0
+    jaccard = len(a & e) / union if union else 0.0
+    # Jaccard punishes legitimate alternative designs harshly.
+    # Floor at 0.3 so a parseable, structurally-different-but-valid SDF
+    # doesn't sink the quality avg to near-zero. test_chisel_parse remains
+    # the gate that detects actually-broken SDFs.
+    return max(0.3, jaccard)
+
+
+@gate
+def test_chisel_parse(agent_output) -> float:
+    """Drop model SDF into a clone of chisel-releases, run `chisel info` on it.
+
+    Validates: yaml syntactic + schema + cross-slice references actually load.
+    Gate (pass/fail). Skips if `chisel` CLI or per-branch clone is absent.
+    """
+    if not os.environ.get("CHISEL_PARSE"):
+        pytest.skip("test_chisel_parse skipped by default (slow); set CHISEL_PARSE=1 to enable")
+    chisel = shutil.which("chisel")
+    if chisel is None:
+        pytest.skip("chisel CLI not on PATH")
+    clone = cr_clone_dir(agent_output.case.branch)
+    if not clone.exists():
+        pytest.skip(f"no clone for {agent_output.case.branch}")
+    sdf_text = agent_output.slice_path.read_text(encoding="utf-8")
+    doc = _load_yaml(agent_output.slice_path)
+    if not isinstance(doc, dict):
+        return 0.0
+    slices_map = doc.get("slices") or {}
+    if not isinstance(slices_map, dict) or not slices_map:
+        return 0.0
+    first_slice = next(iter(slices_map))
+    # mkdtemp on same filesystem as clone so hardlinks work (/tmp is often tmpfs)
+    overlay = Path(tempfile.mkdtemp(prefix="chisel-parse-", dir=str(clone.parent)))
+    try:
+        for entry in clone.iterdir():
+            if entry.name == ".git":
+                continue
+            _hardlink_tree(entry, overlay / entry.name)
+        target_sdf = overlay / "slices" / f"{agent_output.target}.yaml"
+        target_sdf.parent.mkdir(parents=True, exist_ok=True)
+        if target_sdf.exists() or target_sdf.is_symlink():
+            target_sdf.unlink()
+        target_sdf.write_text(sdf_text, encoding="utf-8")
+        proc = subprocess.run(
+            [chisel, "info", "--release", str(overlay),
+             f"{agent_output.target}_{first_slice}"],
+            capture_output=True, text=True, timeout=30,
+        )
+        return 1.0 if proc.returncode == 0 else 0.0
+    finally:
+        shutil.rmtree(overlay, ignore_errors=True)
+
+
+def _hardlink_tree(src: Path, dst: Path) -> None:
+    """Mirror src -> dst using hardlinks for files, recreated symlinks, mkdir for dirs."""
+    if src.is_symlink():
+        os.symlink(os.readlink(src), dst)
+    elif src.is_dir():
+        dst.mkdir(parents=True, exist_ok=True)
+        for child in src.iterdir():
+            _hardlink_tree(child, dst / child.name)
+    else:
+        os.link(src, dst)
