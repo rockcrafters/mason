@@ -33,6 +33,14 @@ MAINTAINER_SCRIPTS = [
 ]
 
 
+def perms_to_octal(perms):
+    """Convert symbolic permissions string (e.g. -rwxr-xr-x) to octal (e.g. 0755)."""
+    def triplet(t):
+        return (4 if t[0] == "r" else 0) + (2 if t[1] == "w" else 0) + (1 if t[2] not in "-T" else 0)
+    p = perms[1:10]  # skip type char, take 9 permission chars
+    return f"0{triplet(p[0:3])}{triplet(p[3:6])}{triplet(p[6:9])}"
+
+
 def run(cmd, cwd=None, check=True, capture=False):
     return subprocess.run(cmd, cwd=cwd, check=check, capture_output=capture, text=True)
 
@@ -63,10 +71,10 @@ def deb_field(deb_path, field):
 
 def deb_contents(deb_path):
     """
-    Returns list of (path, tag, symlink_target_or_None), lexicographically sorted.
+    Returns list of (path, tag, perms, owner, symlink_target_or_None), lexicographically sorted.
     Directories are excluded -- chisel creates them implicitly.
 
-    dpkg-deb --contents columns: perms links owner size date time path [-> target]
+    dpkg-deb --contents columns: perms links owner/group size date time path [-> target]
     tag: 'x' executable  'l' symlink  'f' regular file
     """
     result = run(["dpkg-deb", "--contents", str(deb_path)], capture=True)
@@ -76,6 +84,7 @@ def deb_contents(deb_path):
         if not parts:
             continue
         perms = parts[0]
+        owner = parts[1]  # format: user/group
         entry_type = perms[0]  # - d l
 
         if entry_type == "d":
@@ -93,7 +102,7 @@ def deb_contents(deb_path):
         if not path or path == ".":
             continue
 
-        entries.append((f"/{path}", tag, symlink_target))
+        entries.append((f"/{path}", tag, perms_to_octal(perms), owner, symlink_target))
 
     entries.sort(key=lambda e: e[0])
     return entries
@@ -144,11 +153,11 @@ def main():
             print(f"Depends: {depends}\n")
 
         print("files (lexicographic):  [x]=executable  [f]=file  [l]=symlink")
-        for path, tag, symlink_target in deb_contents(deb):
+        for path, tag, perms, owner, symlink_target in deb_contents(deb):
             if tag == "l":
-                print(f"  [l] {path} -> {symlink_target}")
+                print(f"  [l] {perms} {owner}  {path} -> {symlink_target}")
             else:
-                print(f"  [{tag}] {path}")
+                print(f"  [{tag}] {perms} {owner}  {path}")
 
         scripts = deb_maintainer_scripts(deb, workdir)
         if scripts:
