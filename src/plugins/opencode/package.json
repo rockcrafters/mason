@@ -1,0 +1,7 @@
+{
+  "name": "mason-opencode-plugin",
+  "version": "0.1.0",
+  "description": "mason plugin for opencode -- slash commands surfacing chisel-releases skills.",
+  "type": "module",
+  "private": true
+}
