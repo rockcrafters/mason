@@ -1,0 +1,8 @@
+{
+  "name": "mason",
+  "description": "Agent kit for working on canonical/chisel-releases. Skills, agents, scripts for authoring chisel slice definition files.",
+  "author": {
+    "name": "rockcrafters",
+    "url": "https://github.com/rockcrafters"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "mason",
+  "description": "Agent kit for canonical/chisel-releases work -- skills, agents, scripts for authoring chisel slice definition files.",
+  "owner": {
+    "name": "rockcrafters",
+    "url": "https://github.com/rockcrafters"
+  },
+  "plugins": [
+    {
+      "name": "mason",
+      "description": "Skills + helpers for authoring chisel slice definition files (sdfs) against canonical/chisel-releases.",
+      "source": "./",
+      "category": "development"
+    }
+  ]
+}
