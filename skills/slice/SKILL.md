@@ -1,226 +1,72 @@
 ---
 name: slice
 description: >
-  Author chisel slice definition files (sdfs) for canonical/chisel-releases.
-  Covers branch model, chisel.yaml schema versions (v1/v2/v3), sdf keys,
-  content path options, mutate/starlark semantics, reviewer conventions,
-  ci checks, forward-port chains, and multiarch quirks. Does NOT open PRs --
-  stops at local commits; user opens PR themselves.
+  Author chisel slice definition files (SDFs) for canonical/chisel-releases.
+  Covers dependency-tree-first workflow, package inspection via deb-list,
+  slice design, SDF authoring, formatting, and testing. Stops at local
+  commits; user opens PR themselves.
   Use when user says "add slice", "chisel slice", "slice <pkg>",
   or works inside a `canonical/chisel-releases` checkout.
 ---
 
-Briefing for authoring slices against [`canonical/chisel-releases`](https://github.com/canonical/chisel-releases). **Scope: author + commit slices locally. Do NOT open PRs -- user opens PR themselves.** When this doc and the repo disagree, trust the repo. Read `slices/bash.yaml` / `slices/base-files.yaml` on target branch as canonical reference.
+Skill for authoring slices against [`canonical/chisel-releases`](https://github.com/canonical/chisel-releases).
 
-## What chisel is
+**Scope**: author + test + commit slices locally. Do NOT open PRs -- user opens PR themselves.
 
-[chisel](https://github.com/canonical/chisel) builds minimal ubuntu rootfs by extracting named _slices_ of debs instead of whole packages. Go tool. Consumes _chisel release_ (this repo) as source of truth. CLI: `chisel cut --release <ref> --root <dir> <pkg>_<slice> ...`. Docs: <https://documentation.ubuntu.com/chisel/en/latest/>.
+**Prerequisites**: read `@./CHISEL.md` for chisel/SDF format reference, branch model, schema versions, and canonical naming conventions. This skill focuses on the _workflow_ of writing slices.
 
-## Branch model
+When this skill and the repo disagree, trust the repo. Read `slices/bash.yaml` or `slices/base-files.yaml` on the target branch as canonical reference.
 
-One git branch per ubuntu release: `ubuntu-XX.XX` (`ubuntu-22.04`, `-24.04`, `-25.10`, `-26.04`). `main` meta-only -- ci, workflows, contributing docs; **no `slices/` or `chisel.yaml` on `main`**. All slice work targets release branch. EOL branches frozen. Active branches grow: 24.04 ~600 sdfs, 26.04 ~650.
+---
 
-Per-release branch root:
+## Workflow
 
-- `chisel.yaml` -- release manifest.
-- `slices/<pkg>.yaml` -- one per debian source package.
-- `spread.yaml` + `tests/spread/integration/<pkg>/{task.yaml,smoke.sh}` -- integration tests.
-- `tests/spread/lib/` -- shared spread helpers.
-- `.github/` -- workflows + ci scripts (synced from `main`).
+Follow these steps in order. Do NOT skip steps.
 
-Live release list: repo `README.md`.
+### Step 1: Validate
 
-## `chisel.yaml` schema versions
+1. **Confirm it is an Ubuntu package.** Chisel only supports packages from Ubuntu (and Ubuntu Pro) archives.
+2. **Identify the target Ubuntu release** (e.g. `ubuntu-24.04`). This determines which chisel-releases branch to target.
+3. **Check the branch is not EOL.** Read `chisel.yaml` on the target branch: `maintenance.end-of-life` must be in the future.
+4. **Check `format:` version** in `chisel.yaml`. This gates available features (see `@./CHISEL.md` schema versions table). Do not use v2+/v3+ features on older formats.
+5. **Avoid duplicates.** Check `slices/<pkg>.yaml` does not already exist on the target branch. If it does, stop and inform the user.
 
-- **v1** -- `ubuntu-20.04`, `-22.04`, `-24.04`. Separate `v2-archives:` block for pro/esm.
-- **v2** -- `ubuntu-25.10`. Needs chisel >= `v1.2.0`. Pro archives unified under `archives:` via `pro:` subkey. Adds `prefer:`.
-- **v3** -- `ubuntu-26.04`. Needs chisel >= `v1.4.0`. Adds `hint:` on slices + `v3-essential:` block.
+### Step 2: Build the Full Dependency Tree
 
-Key fields: `format:` (gates features), `archives.ubuntu.suites[0]` (codename, e.g. `noble`), `archives.ubuntu.version` (mirrors branch suffix), `maintenance.end-of-life` (date; eol = read-only).
+Before inspecting or designing anything, build the complete dependency tree. Dependencies MUST be sliced before the target package.
 
-## SDF top-level keys
+1. **Get the full recursive dependency list.** Use `apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances <package>` to resolve all transitive `Depends:`. Alternatively, run `deb-list <package>` to get direct `Depends:` and recurse manually.
+2. **Check which dependencies already have slices** on the target chisel-releases branch (`ls slices/ | sed 's/\.yaml$//'` or `chisel info --release <release> <dep> ...`).
+3. **Identify unsliced dependencies.** Produce an ordered list of packages that need slicing, sorted **leaves-first** (packages with no unsliced dependencies come first).
+4. **Present the plan to the user.** Show:
+   - The full dependency tree
+   - Which dependencies already have slices
+   - Which dependencies need new slices
+   - The proposed slicing order (leaves first)
 
-- `package` -- required, string. Deb package name; **must match filename stem**.
-- `archive` -- optional. Selects archive from `chisel.yaml`'s `archives:`. Omit for default.
-- `essential` -- optional, list of `<pkg>_<slice>` applied to **every** slice in file. Typically `<pkg>_copyright`.
-- `slices` -- required, map name -> body.
+   Get confirmation before proceeding.
 
-## Per-slice keys
+IMPORTANT: Slice dependencies bottom-up. A package cannot reference slices that do not exist. Work from the leaves of the dependency tree toward the root.
 
-- `essential` -- list of `<pkg>_<slice>` deps (cross-package ok).
-- `contents` -- map path -> entry options. **Paths lexicographically sorted.**
-- `mutate` -- starlark script run after every slice installed.
-- `hint` -- v3+ only, max 40 chars, validated by `validate-hints` ci.
+Note: only `Depends:` matter. Not `Recommends:` or `Suggests:`. Including `Recommends:` is rejected by reviewers.
 
-## Content path entry options
+### Step 3: Inspect Each Package
 
-| key | type | meaning |
-|---|---|---|
-| (bare path) | -- | copy from deb at this path |
-| `copy` | string | copy from different source path in deb |
-| `make` | bool | create empty dir; requires trailing `/` |
-| `mode` | int (octal) | permission bits, e.g. `0755` |
-| `text` | string | inline literal file contents |
-| `symlink` | string | create symlink to this target |
-| `arch` | string or list | restrict to `amd64`, `arm64`, `armhf`, `i386`, `ppc64el`, `riscv64`, `s390x` |
-| `mutable` | bool | path may be modified by `mutate:` |
-| `until` | `"mutate"` | available during install; chisel removes after mutate phase |
-| `generate` | `"manifest"` | chisel writes manifest at this path |
-| `prefer` | string, **v2+** | resolve cross-package path conflicts |
+For EACH package that needs slicing (starting from leaf dependencies), inspect it using the bundled `deb-list` script:
 
-## `mutate:` semantics
-
-- Starlark (google's restricted python dialect; no imports, no exceptions, restricted stdlib).
-- Runs **once** after all slices in install set placed. Not per-slice. Don't assume execution order.
-- Helpers: `content.list(d)`, `content.read(f)`, `content.write(f, s)`.
-- Use: merge passwd/group, filter ca certs, splice apt sources, etc.
-- For merging / transforming files that exist -- **not synthesis**. If binary needs `F`, ship `F` from deb.
-- `until: mutate` partner: file available to script, deleted post-mutate. Collision: if needed at runtime too, can't drop -- use two paths or restructure.
-
-## Addressing & conventions
-
-- **`<pkg>_<slice>`** -- canonical full id. Used in `essential:` and `chisel cut` cli.
-- **`copyright` slice** -- nearly every pkg has one. Ships `/usr/share/doc/<pkg>/copyright`. Listed in file-level `essential:` so all slices transitively ship it. **Upstream `LICENSE.txt` / `NOTICE` / `ThirdPartyNotices.txt` != copyright** -- separate `license:` / `notice:` slice depending on `<pkg>_copyright`.
-- **Filename rule** -- `slices/<pkg>.yaml` stem == `package:` field.
-- **Path sort** -- bytewise ascii sort in `contents:`. Reviewers reject unsorted.
-- **Slice design** -- group by content type (`bins`, `config`, `libs`) OR by functional use case. Don't mix arbitrarily.
-
-## Canonical slice names (reviewer preference)
-
-Names are convention but reviewers re-classify aggressively. Use:
-
-- `bins` -- executables (plural; never `bin`).
-- `libs` -- shared libs (plural; never `lib`).
-- `headers` -- `/usr/include/...`.
-- `config` / `configs` -- conf files. Break large `config` into `<purpose>-config`: `modprobe-config`, `tmpfiles-config`, `pam-config`, `kernel-parameters`, `system-users`.
-- `scripts` -- shell helpers / non-binary executables. Not in `bins`.
-- `data` -- static data (locales, templates, fonts).
-- `jars` -- jvm artefacts.
-- `copyright` -- deb copyright file.
-- `license` / `notice` -- upstream licence/notice (not deb copyright).
-- `core` -- minimum-functional subset. **Not "everything"**. Avoid `all` (rejected).
-- `standard` -- fuller-featured above `core`.
-- When deb already names `<pkg>-core` (e.g. `git-core`), keep verbatim.
-
-## Dependency rules
-
-- **Stay true to deb's declared deps.** List each direct apt `Depends:` as `essential:`. Reviewers cross-check via `pkg-deps` ci.
-- **`Depends:` only** -- not `Recommends:`/`Suggests:`. Including `Recommends:` rejected.
-- **Maintainer postinst not mirrored.** If upstream postinst invokes another pkg's tool (e.g. `update-mime-database`), either drop dep or write `mutate:` equivalent.
-- **Only slices we need.** Speculative slices rejected.
-- **Published slices append-only in spirit.** Removing files from existing slice = regression. Create variant (`<existing>-only`, stricter `core`).
-- **Use-case-agnostic.** Comments like _"this slice exists for app X"_ rejected. Describe what it ships.
-
-## Path entry style nits
-
-- **Multiarch lib glob**: `*-linux-*`, not explicit triple. e.g. `/usr/lib/*-linux-*/libnghttp2.so.14*:`.
-- **Drop trailing `*` if one version**: `libfoo.so.1:` not `libfoo.so.1*:`.
-- **No explicit `symlink:` if deb ships it.** Chisel preserves deb symlinks. Manual `symlink:` only for paths deb doesn't ship.
-- **Annotate explicit symlinks**: `/usr/bin/dotnet:  # Symlink to ../lib/dotnet/dotnet`.
-- **Inline-style for short options**: `/path: {arch: [amd64, arm64]}`.
-- **Arch list formatting rigid**: lowercase, alphabetical, no inner spaces. `[amd64, arm64, ppc64el, riscv64, s390x]` -- single space after commas, no padding. `[ amd64, ... s390x ]` rejected.
-
-## `v3-essential:` (v3+)
-
-Parallel map alongside `essential:`. Arch-gated cross-package deps:
-
-```yaml
-v3-essential:
-  dotnet-sdk-aot-10.0_libs: {arch: [amd64, arm64]}
+```
+deb-list <package> [arch] [--scripts]
 ```
 
-Regular `essential:` stays flat string list. Only `v3-essential:` accepts per-entry options (currently just `arch:`).
+This downloads the `.deb` from the local apt cache and prints:
+- Package header (name, version, arch)
+- `Depends:` line (feeds directly into `essential:` entries)
+- All non-directory files, lexicographically sorted, with type tags:
+  - `[x]` executable, `[f]` regular file, `[l]` symlink (with target)
+- Octal permissions and owner per file
+- Which maintainer scripts are present (add `--scripts` to print full bodies)
 
-Historical bug: malformed `essential:` entries (typoed id) silently dropped. Patched upstream; older chisel may misbehave.
-
-## Chisel cli
-
-- `chisel cut --release <ref> --root <dir> [--arch <a>] <pkg>_<slice> ...` -- materialise rootfs.
-- `chisel find <pattern>` -- search slices.
-- `chisel info <pkg>_<slice>` -- inspect slice.
-
-`--release`: `ubuntu-XX.XX` (online branch), absolute path (local checkout), or omit (host `/etc/os-release`).
-
-## Manifest, pro archives
-
-- **Manifest** -- emit at any path declared `generate: manifest`. Convention: `base-files_chisel` writes `/var/lib/chisel/manifest.wall` (jsonwall, zstd). Touch only when slicing `base-files`.
-- **Pro slices** -- sdf has `archive: <name>` -> `pro:`-tagged archive in `chisel.yaml` (`fips`, `fips-updates`, `esm-apps`, `esm-infra`). Most lts branches wired; `ubuntu-26.04` not yet.
-
-## Contribution rules
-
-Defer to [`CONTRIBUTING.md` on `main`](https://github.com/canonical/chisel-releases/blob/main/CONTRIBUTING.md). Key points:
-
-- **Branch off target release branch, not `main`.** PRs into `main` wrong.
-- **Conventional commits**: `feat:`, `fix:`, `test:`, `ci:`, `chore:`, `docs:`, `refactor:`. Subject lowercase, imperative, <=50 chars, no trailing period. Body wrap 72.
-- **Two maintainer approvals**, cla signed, green ci before review, no force-push after review comments, one cohesive change per pr.
-
-Extras not in CONTRIBUTING:
-
-- **Forward-port to every newer live release.** PR chain oldest -> newest. `forward-port-missing` ci auto-labels prs missing this. Exception: pkg gone from newer archive -- auto-ignored.
-- **Two-approval exception**: trivial forward-port prs (cherry-picks of approved breaking changes) sometimes land on one approval. Don't rely on it for substantive work.
-- Non-forward-port prs: mark with `### Forward porting\nn/a` in description.
-
-## CI checks
-
-| check | failure means |
-|---|---|
-| `lint` | yaml syntax/formatting issue in sdf |
-| `install-slices` | slice can't `chisel cut`, or pkg not in archive for some arch |
-| `removed-slices` | sdf deleted -- breaking unless pkg gone from archive |
-| `forward-port-missing` | new slice in branch but not in newer live releases |
-| `pkg-deps` | informational diff declared deps vs `apt depends`; non-blocking |
-| `validate-hints` | `hint:` text fails nlp style check (v3+) |
-| `spread` | smoke test failed inside lxd test container |
-| `cla-check` | cla unsigned |
-
-Heads-up: github copilot auto-reviews and proposes patterns reviewers reject (inner-spaced arch lists, `: {}` on essentials). Don't follow blindly.
-
-## Multiarch quirks
-
-- **`binutils-common` per-arch** despite `Architecture: all`-looking contents. Don't assume one sdf covers all arches.
-- **Cross-toolchain pkgs** (`<tool>-<triple>-linux-gnu`, e.g. `binutils-aarch64-linux-gnu`) ship prefixed binaries (`aarch64-linux-gnu-ld`). Unprefixed symlinks (`/usr/bin/ld -> aarch64-linux-gnu-ld`) **not** in cross deb -- consumers create them. Convention: arch-specific sdfs leave them out; top-level `binutils` sdf carries unprefixed name with `# -> ${ARCH_TRIPLET}-ld` comment.
-- **`/proc/self/exe` linker workaround** for chroot java tests: `tests/spread/lib/link-proc`. Needed because chroot breaks `/proc/self/exe`.
-
-## Testing model
-
-Local:
-
-1. Checkout release branch.
-2. Install `chisel` cli (binary or `go install github.com/canonical/chisel/cmd/chisel@latest`).
-3. `chisel cut --release . --root /tmp/test-rootfs <pkg>_<slice>`.
-4. Exercise: `chroot /tmp/test-rootfs <cmd> --version` etc.
-
-Integration tests: `tests/spread/integration/<pkg>/` with `task.yaml` (spread task: `summary`, `prepare`, `execute`) + `smoke.sh`. Run under spread with lxd backend (`spread.yaml`). Ephemeral `ubuntu:<release>` containers. **Don't run spread locally without lxd configured** -- allocates cloud-style resources.
-
-Rules:
-
-- **Every binary in `bins` slice exercised in spread.** "please test every binary being delivered" is recurring rejection.
-- **Untestable means unshippable.** Reviewers push to drop rather than ship untested.
-- **80%-ish coverage** soft target in pr coverage comments. Not hard gate but watched.
-- **Spread runs against `distro-info --latest`** for newest release; sometimes lxd image lags -- fallback to `ubuntu-daily:` channel ([pr#1001](https://github.com/canonical/chisel-releases/pull/1001)).
-
-## Gotchas to internalise
-
-- **Never commit on `main`.** Slice work on release branches.
-- **Branch suffix matches `chisel.yaml` `archives.ubuntu.version`** -- `ubuntu-24.04` <-> `version: 24.04`.
-- **EOL releases read-only.** Check `maintenance.end-of-life` vs today.
-- **Forward-port not optional**, auto-ignored when pkg version gone from newer archive (e.g. `librocksdb9.11.yaml` deleted because newer ships `librocksdb10`). Heart of [#1000](https://github.com/canonical/chisel-releases/issues/1000).
-- **Slice file == package 1:1.** Don't put two packages in one yaml.
-- **`<pkg>_<slice>` addressing primitive** for cross-slice refs.
-- **Debian arches in gating**: `amd64`, `arm64`, `armhf`, `i386`, `ppc64el`, `riscv64`, `s390x`. Not `x86_64`/`aarch64`.
-- **`copyright` slice conventional** -- almost every pkg has one. In file-level `essential:`.
-- **`chisel <cmd> --release ubuntu-XX.XX`** -> matching git branch (online); `--release <path>` -> local; no flag -> host `/etc/os-release`.
-- **`format:` gates schema**: v1/v2/v3 differ -- `hint:` v3-only, `prefer:` v2+, `pro:` under `archives:` in v2+ but `v2-archives:` in v1.
-- **Starlark not python** in mutate.
-- **Path sort** lexicographic in `contents:`.
-- **`copyright` mandatory for functional slices.**
-- **Forward-port chain order**: oldest -> newest. Cross-link prs in descriptions.
-- **Slice rename across releases** (e.g. `bins` -> `scripts`): breaking pr in oldest, then ff prs into newer with `n/a` forward-port marker.
-- **Versioned soname pkgs** (`librocksdb9.11`) deleted when upstream rolls new soname (`librocksdb10`). `removed-slices` ci ignores if old pkg gone from archive.
-
-## Inspecting a deb package
-
-Use `skills/slice/deb-list <package> [arch]` to inspect a deb before authoring slices.
+Example:
 
 ```
 $ deb-list bash
@@ -240,68 +86,449 @@ files (lexicographic):  [x]=executable  [f]=file  [l]=symlink
 maintainer scripts present: postinst  (re-run with --scripts to view)
 ```
 
-Add `--scripts` to print the full bodies of all present maintainer scripts.
-
-- `Depends:` feeds directly into `essential:` entries -- filter to direct deps only, skip `Recommends:`.
+Reading the output:
 - `[l] path -> target` means the deb ships that symlink -- use a bare path entry, no explicit `symlink:` needed.
 - `[x]` marks executables (go in `bins`); `[f]` marks regular files.
-- Octal permissions and owner are shown per file. Add `mode:` to a slice entry only when the value is non-standard (not `0644`/`0755`/`0777`).
-- If `--scripts` shows the postinst calling tools like `update-alternatives`, `ldconfig`, or `update-mime-database`, those side-effects do not run in a chisel rootfs -- either drop the dep or write a `mutate:` equivalent.
-- Run once per target arch when multiarch differences are expected (`deb-list libfoo amd64`, then `arm64`, etc.).
+- Add `mode:` to a slice entry only when the permission is non-standard (not `0644`/`0755`/`0777`).
+- If `--scripts` shows `postinst` calling `update-alternatives`, `ldconfig`, or `update-mime-database`, those side-effects don't run in a chisel rootfs -- either drop the dep or write a `mutate:` equivalent.
+- Run once per target arch when multiarch differences are expected (`deb-list libfoo amd64`, then `deb-list libfoo arm64`).
 
 Requires `apt-get` + `dpkg-deb` and a populated apt cache (`sudo apt-get update`).
 
-## Inspecting repo without full checkout
+With this output, analyse:
 
-Prefer `git` + `curl` over `gh` -- more commonly available, no auth needed for public reads.
+#### 3a. Contents & file types
 
-```bash
-# list live release branches
-git ls-remote --heads https://github.com/canonical/chisel-releases.git 'ubuntu-*' \
-  | awk '{print $2}' | sed 's|refs/heads/||'
+Understand what the package ships: binaries, libraries, config files, data files, scripts, headers, etc. Note architecture-specific paths.
 
-# read release manifest (raw.githubusercontent.com serves blobs by ref)
-curl -fsSL https://raw.githubusercontent.com/canonical/chisel-releases/ubuntu-24.04/chisel.yaml
+#### 3b. Maintainer scripts
 
-# read sdf
-curl -fsSL https://raw.githubusercontent.com/canonical/chisel-releases/ubuntu-24.04/slices/bash.yaml
+Chisel does not run maintainer scripts. Whatever `postinst`/`preinst` do (create symlinks, generate files, register alternatives), you must reproduce via:
+- `contents` declarations for simple cases (symlinks, directories)
+- `mutate:` scripts for logic
 
-# list slices on a branch w/out full clone -- sparse / partial fetch
-git clone --filter=blob:none --no-checkout --depth 1 \
-  -b ubuntu-24.04 https://github.com/canonical/chisel-releases.git /tmp/cr
-git -C /tmp/cr sparse-checkout set slices chisel.yaml
-git -C /tmp/cr checkout
+**No explicit `symlink:` if the deb already ships it.** Chisel preserves deb symlinks. Manual `symlink:` only for paths the deb doesn't ship (e.g. those created by maintainer scripts).
 
-# diff slice between releases (needs clone)
-git -C <chisel-releases-repo> diff ubuntu-22.04:slices/coreutils.yaml ubuntu-24.04:slices/coreutils.yaml
+#### 3c. Binary analysis
+
+For ELF binaries, determine shared library dependencies (via `ldd` output from the script). Cross-reference against the dependency tree to catch transitive runtime deps.
+
+#### 3d. Source package analysis
+
+Use the source to:
+- Understand what features/modules are compiled in
+- Check for runtime file lookups (config paths, data directories, plugin dirs)
+- Identify optional vs mandatory dependencies
+- Check for hardcoded paths that must be included in slices
+
+### Step 4: Ensure Consistency with Existing Slices
+
+Before designing new slices, study existing SDFs on the target branch.
+
+1. **Read representative SDFs** for similar packages. Use `slices/bash.yaml`, `slices/base-files.yaml`, `slices/openssl.yaml`, `slices/dpkg.yaml` as references.
+2. **Follow naming conventions** from `@./CHISEL.md` (Canonical Slice Names table). Use `libs` never `lib`, `bins` never `bin`, etc.
+3. **Check shared dependencies.** If the target package depends on packages with multiple slices (e.g. `libc6_libs`, `libc6_config`), determine which _specific_ slice is needed. Do not over-depend.
+4. **Verify no path conflicts.** Multiple slices from different packages can declare the same path ONLY if:
+   - Both slices are in the same package, OR
+   - The path is not extracted from a package (e.g. `{make: true}`, `{text: ...}`) and the inline definitions match exactly
+
+   Search existing slices: `grep -r "/path/you/want" slices/`
+5. **Respect the append-only principle.** Removing files from existing published slices is a regression. If you need a slimmer variant, create a new slice (`core`, `minimal`, etc.) rather than removing from an existing one.
+
+### Step 5: Design the Slices
+
+Choose the approach that fits the package best.
+
+#### Approach A: Group by Type of Content
+
+Best for most packages. Group files by their type. See the Canonical Slice Names table in `@./CHISEL.md`.
+
+Typical structure:
+- `copyright` slice (mandatory, always present)
+- `bins` for executables
+- `libs` for shared objects
+- `config` for configuration files
+- `data`, `scripts`, `var`, etc. as needed
+
+#### Approach B: Group by Function
+
+Best for complex packages with distinct functional subsets (e.g. Python standard library, large runtime frameworks).
+
+Typical structure:
+- `core` -- minimum-functional subset
+- `standard` -- fuller-featured above `core`
+- Named functional slices (e.g. `file-formats`, `networking`, `crypto`)
+
+Do NOT mix approaches arbitrarily within a single SDF.
+
+### Step 6: Write the SDF
+
+Create `slices/<package>.yaml`:
+
+```yaml
+package: <package-name>
+
+essential:
+  - <package-name>_copyright
+
+slices:
+  bins:
+    essential:
+      - <dep-package>_libs
+      - <package-name>_config
+    contents:
+      /usr/bin/<binary>:
+
+  config:
+    contents:
+      /etc/<package>/config-file:
+
+  copyright:
+    contents:
+      /usr/share/doc/<package-name>/copyright:
 ```
 
-Contribution flow:
+Key rules:
+- `package:` must match the filename stem
+- File-level `essential:` lists `<pkg>_copyright` so every slice transitively ships it
+- `copyright` slice placed **last** by convention
+- One SDF per package. Never put two packages in one YAML file
+
+#### `license` / `notice` slices
+
+Upstream `LICENSE.txt`, `NOTICE`, `ThirdPartyNotices.txt` are **not** the deb copyright. They get separate `license:` / `notice:` slices that depend on `<pkg>_copyright`.
+
+### Step 7: Apply Formatting Rules
+
+These are **mandatory**. CI and reviewers reject non-conforming SDFs.
+
+1. **Sort `contents` paths** in bytewise ASCII (lexicographic) order within each slice.
+2. **Place `essential` (global)** at the top of the file, right after `package:`.
+3. **Place the `copyright` slice** at the bottom of the `slices:` block.
+4. **Slice names**: lowercase, at least 3 characters, only `a-z`, `0-9`, `-`, must start with a letter.
+5. **Paths must be absolute**, starting with `/`.
+6. **Multiarch lib glob**: use `*-linux-*`, not explicit triples. E.g. `/usr/lib/*-linux-*/libfoo.so.1:`.
+7. **Drop trailing `*`** for single-version sonames: `libfoo.so.1:` not `libfoo.so.1*:`.
+8. **Arch list formatting**: lowercase, alphabetical, single space after commas, no inner padding. `{arch: [amd64, arm64]}` -- not `{arch: [ amd64, arm64 ]}`.
+9. **Inline-style** for short options: `/path: {arch: [amd64, arm64]}`.
+10. **Annotate explicit symlinks** with comments: `/usr/bin/foo:  # Symlink to ../lib/foo/foo`.
+
+### Step 8: Test
+
+Testing is mandatory. Depth depends on what the package provides.
+
+#### Package classification
+
+- **Library** (e.g. `libssl3`, `libc6`): verify `.so` files exist and are valid ELF. Minimal testing acceptable.
+- **Simple utility** (e.g. `grep`, `sed`): test `--version` + one representative functional test.
+- **Application / major software** (e.g. `python3`, `nginx`, `curl`, `git`): requires a **thorough test suite**.
+
+#### Manual testing (always do this first)
 
 ```bash
-git -C <repo> fetch origin ubuntu-24.04
-git -C <repo> checkout -b add-mypkg-slices ubuntu-24.04
-# add slices/mypkg.yaml + tests/spread/integration/mypkg/{task.yaml,smoke.sh}
-git -C <repo> commit -m "feat(mypkg): add core, bins, libs, copyright slices"
-# STOP here. User opens pr against ubuntu-24.04 and chains forward-ports through 25.10 -> 26.04.
+mkdir rootfs/
+chisel cut --release ./ --root rootfs/ <package>_<slice>
+sudo chroot rootfs/ <command> --version
 ```
 
-## External references
+#### Thorough testing for applications
 
-- Chisel source: <https://github.com/canonical/chisel>
-- Chisel docs: <https://documentation.ubuntu.com/chisel/latest/>
-  - How-to slice a package: <https://documentation.ubuntu.com/chisel/latest/how-to/slice-a-package/>
-  - SDF reference: <https://documentation.ubuntu.com/chisel/latest/reference/chisel-releases/slice-definitions/>
-  - `chisel.yaml` reference: <https://documentation.ubuntu.com/chisel/latest/reference/chisel-releases/chisel.yaml/>
-  - Manifest reference: <https://documentation.ubuntu.com/chisel/latest/reference/manifest/>
-  - `cut` cli reference: <https://documentation.ubuntu.com/chisel/latest/reference/cmd/cut/>
-  - Pro slices how-to: <https://documentation.ubuntu.com/chisel/latest/how-to/install-pro-package-slices/>
-- chisel-releases repo: <https://github.com/canonical/chisel-releases>
-  - `CONTRIBUTING.md` (authoritative): <https://github.com/canonical/chisel-releases/blob/main/CONTRIBUTING.md>
-  - `README.md` (live release list): <https://github.com/canonical/chisel-releases/blob/main/README.md>
-- chisel-releases navigator: <https://canonical.github.io/chisel-releases-navigator/>
-- Ubuntu release schedule (codenames + eol): <https://wiki.ubuntu.com/Releases>
+For applications, CLI tools, servers, interpreters -- any package providing user-facing functionality:
+
+**Research phase** (before writing tests):
+1. Read the package documentation: feature set, CLI flags, config options, common use cases.
+2. Study the upstream test suite from the source package. Look for `test*/`, `tests/`, `t/` directories.
+3. Identify key functional areas. Each should have at least one test.
+4. Check runtime dependencies: does the software need `/etc/passwd`, `/tmp`, timezone data, locale data, etc.?
+
+**Write the test suite** at `tests/spread/integration/<package>/task.yaml`:
+
+```yaml
+summary: Integration tests for <package>
+
+execute: |
+  # Test 1: Basic invocation
+  rootfs="$(install-slices <package>_bins)"
+  chroot "${rootfs}/" <command> --version
+
+  # Test 2: Core functionality
+  # (for curl: fetch a URL; for python3: import core modules; for vim: edit a file)
+
+  # Test 3: Configuration
+  # (verify config files are picked up)
+
+  # Test 4: Key features
+  # (test primary use cases)
+```
+
+**Test design principles**:
+- **Test real functionality**, not just file existence. A `bins` slice must prove its binaries actually work.
+- **Test each functional slice.** If you have `bins` and `scripts`, both need tests.
+- **Test in isolation.** Each test works with only the slices it declares -- no reliance on the host.
+- **Every binary in a `bins` slice must be exercised.** Reviewers reject untested binaries.
+- **Untestable means unshippable.** Reviewers push to drop rather than ship untested slices.
+
+Run with: `spread lxd:tests/spread/integration/<package>`
+
+### Step 9: Commit
+
+```bash
+git -C <repo> commit -m "feat(<pkg>): add <slice-list> slices"
+```
+
+Follow [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/): `feat:`, `fix:`, `test:`, `ci:`, `chore:`, `docs:`. Subject lowercase, imperative, <=50 chars, no trailing period. Body wrap 72.
+
+**Stop here. User opens PR themselves.**
+
+Reminder: all PRs must be forward-ported oldest -> newest across all maintained release branches.
 
 ---
 
-When this doc disagrees with repo, trust repo. When in doubt, read `slices/bash.yaml` or `slices/base-files.yaml` on target release branch.
+## Real-World Examples
+
+### Simple Binary Package (vim-tiny)
+
+```yaml
+package: vim-tiny
+
+essential:
+  - vim-tiny_copyright
+
+slices:
+  bins:
+    essential:
+      - libacl1_libs
+      - libc6_libs
+      - libselinux1_libs
+      - libtinfo6_libs
+      - vim-common_addons
+      - vim-common_config
+      - vim-tiny_config
+    contents:
+      /usr/bin/vim.tiny:
+
+  config:
+    contents:
+      /etc/vim/vimrc.tiny:
+
+  copyright:
+    contents:
+      /usr/share/doc/vim-tiny/copyright:
+```
+
+### Library Package (libc6)
+
+```yaml
+package: libc6
+
+essential:
+  - libc6_copyright
+
+slices:
+  config:
+    contents:
+      /etc/ld.so.conf.d/*-linux-*.conf:
+
+  libs:
+    essential:
+      - base-files_lib
+    contents:
+      /usr/lib*/ld*.so.*:
+      /usr/lib/*-linux-*/ld*.so.*:
+      /usr/lib/*-linux-*/libc.so.*:
+      /usr/lib/*-linux-*/libdl.so.*:
+      /usr/lib/*-linux-*/libm.so.*:
+      /usr/lib/*-linux-*/libmvec.so.*: {arch: [amd64, arm64]}
+      /usr/lib/*-linux-*/libpthread.so.*:
+      /usr/lib/*-linux-*/libresolv.so.*:
+      /usr/lib/*-linux-*/librt.so.*:
+
+  copyright:
+    contents:
+      /usr/share/doc/libc6/copyright:
+```
+
+### Package with Mutation Scripts (ca-certificates)
+
+```yaml
+package: ca-certificates
+
+essential:
+  - ca-certificates_copyright
+
+slices:
+  data:
+    essential:
+      - openssl_data
+    contents:
+      /etc/ssl/certs/ca-certificates.crt: {text: FIXME, mutable: true}
+      /usr/share/ca-certificates/mozilla/: {until: mutate}
+      /usr/share/ca-certificates/mozilla/**: {until: mutate}
+    mutate: |
+      certs_dir = "/usr/share/ca-certificates/mozilla/"
+      certs = [
+        content.read(certs_dir + path) for path in content.list(certs_dir)
+      ]
+      content.write("/etc/ssl/certs/ca-certificates.crt", "".join(certs))
+
+  copyright:
+    contents:
+      /usr/share/doc/ca-certificates/copyright:
+```
+
+### Multi-Slice Package (dpkg)
+
+```yaml
+package: dpkg
+
+essential:
+  - dpkg_copyright
+
+slices:
+  bins:
+    essential:
+      - diffutils_bins
+      - dpkg_config
+      - dpkg_tables
+      - dpkg_var
+      - libbz2-1.0_libs
+      - libc-bin_ldconfig
+      - libc6_libs
+      - liblzma5_libs
+      - libmd0_libs
+      - libselinux1_libs
+      - libzstd1_libs
+      - tar_tar
+      - zlib1g_libs
+    contents:
+      /usr/bin/dpkg:
+      /usr/bin/dpkg-deb:
+      /usr/bin/dpkg-divert:
+      /usr/bin/dpkg-maintscript-helper:
+      /usr/bin/dpkg-query:
+      /usr/bin/dpkg-realpath:
+      /usr/bin/dpkg-split:
+      /usr/bin/dpkg-statoverride:
+      /usr/bin/dpkg-trigger:
+      /usr/bin/update-alternatives:
+      /usr/libexec/dpkg/*:
+      /usr/sbin/start-stop-daemon:
+
+  config:
+    contents:
+      /etc/dpkg/dpkg.cfg:
+      /etc/dpkg/dpkg.cfg.d/:
+
+  tables:
+    contents:
+      /usr/share/dpkg/*table:
+
+  var:
+    contents:
+      /var/lib/dpkg/alternatives/:
+      /var/lib/dpkg/info/:
+      /var/lib/dpkg/parts/:
+      /var/lib/dpkg/updates/:
+
+  copyright:
+    contents:
+      /usr/share/doc/dpkg/copyright:
+```
+
+---
+
+## Common Pitfalls
+
+1. **Slicing the target before its dependencies.** Always build the dependency tree first and work bottom-up.
+2. **Including `Recommends:`/`Suggests:` in `essential:`.** Only `Depends:` matter. Reviewers reject the rest.
+3. **Forgetting transitive dependencies.** A binary might need libraries from packages not in the direct dependency list. Always check `ldd` output.
+4. **Not consulting the source package.** Binaries may perform runtime lookups for files not obvious from `.deb` contents alone.
+5. **Inconsistent naming.** Always check existing SDFs. Use `libs` not `lib`, `bins` not `bin`, etc.
+6. **Overly broad globs.** `/usr/lib/python3.*/foo/**` might conflict with other packages. Be specific.
+7. **Missing `copyright` slice.** Every SDF must have one; every other slice must depend on it.
+8. **Not reproducing maintainer scripts.** If `postinst` creates symlinks or generates files, your slices must do that too.
+9. **Explicit `symlink:` for paths the deb already ships.** Chisel preserves deb symlinks; only use `symlink:` for paths created by maintainer scripts.
+10. **Ignoring architecture differences.** Use `{arch: ...}` for arch-specific paths.
+11. **Not sorting contents paths.** Bytewise ASCII sort. Linters reject unsorted.
+12. **Shallow testing.** `--version` alone is not sufficient for applications. Every binary in `bins` must be exercised.
+13. **Adding speculative slices.** Only ship slices that are needed and testable. Speculative slices are rejected.
+14. **Use-case-specific comments.** Comments like "this slice exists for app X" are rejected. Describe what the slice ships.
+
+---
+
+## Step 10: Reflect and Refine the Skill
+
+After the work is fully complete (SDFs written, tests passing, commit made), perform a reflection pass. The goal is to verify the output against the sources of truth and improve this skill for next time.
+
+### 10a. Validate against chisel-docs
+
+Fetch the current upstream documentation and compare your work against it:
+
+```bash
+# Fetch the authoritative slicing guide
+curl -fsSL https://raw.githubusercontent.com/canonical/chisel-docs/main/docs/how-to/slice-a-package.md
+
+# Fetch the SDF format reference
+curl -fsSL https://raw.githubusercontent.com/canonical/chisel-docs/main/docs/reference/chisel-releases/slice-definitions.md
+
+# Fetch the chisel.yaml reference (for schema version rules)
+curl -fsSL https://raw.githubusercontent.com/canonical/chisel-docs/main/docs/reference/chisel-releases/chisel.yaml.md
+
+# Fetch the slice design approaches
+curl -fsSL https://raw.githubusercontent.com/canonical/chisel-docs/main/docs/explanation/slice-design-approaches.md
+```
+
+Check:
+- Did the workflow in this skill match the documented process? Are there new steps or changed recommendations?
+- Are there new SDF fields, content path options, or `mutate:` functions not covered here?
+- Has the `chisel.yaml` format version table changed (new versions, new branches)?
+- Are there new design approaches or naming conventions?
+
+### 10b. Validate against chisel-releases
+
+Compare your output against existing SDFs on the target branch:
+
+```bash
+# Read a few canonical reference SDFs on the target branch
+curl -fsSL https://raw.githubusercontent.com/canonical/chisel-releases/<branch>/slices/bash.yaml
+curl -fsSL https://raw.githubusercontent.com/canonical/chisel-releases/<branch>/slices/base-files.yaml
+
+# Read the CONTRIBUTING.md for any updated rules
+curl -fsSL https://raw.githubusercontent.com/canonical/chisel-releases/main/CONTRIBUTING.md
+
+# Check if there are new CI workflows or checks
+curl -fsSL https://github.com/canonical/chisel-releases/tree/main/.github/workflows
+```
+
+Check:
+- Does your SDF formatting match the patterns in `bash.yaml` / `base-files.yaml`?
+- Are there new slice naming conventions that existing SDFs use but this skill doesn't document?
+- Have contribution rules changed (new CI checks, new forward-port rules, etc.)?
+- Are there new reviewer patterns visible in recent PRs?
+
+### 10c. Validate against chisel tool behaviour
+
+If anything behaved unexpectedly during `chisel cut` (e.g. a field was ignored, a wildcard didn't match as expected, mutate ran differently than documented):
+
+```bash
+# Check the chisel source for the relevant parsing/logic
+curl -fsSL https://raw.githubusercontent.com/canonical/chisel/main/internal/setup/setup.go
+```
+
+Check:
+- Did chisel accept or reject anything that this skill said was valid/invalid?
+- Are there new CLI flags, new `contents` options, or changed validation rules?
+
+### 10d. Update the skill files
+
+If any discrepancies were found, update the relevant skill file:
+
+- **Factual corrections** (format versions, field names, CLI syntax, arch names) -> update `@./CHISEL.md`
+- **Workflow changes** (new inspection steps, changed design recommendations, new testing requirements) -> update this file (`slice/SKILL.md`)
+- **Review criteria changes** (new CI checks, changed rejection reasons, new style rules) -> update `reviewer/SKILL.md`
+
+When updating, follow these principles:
+- **Be specific.** Don't add vague guidance. Add the exact rule, the exact field name, the exact formatting.
+- **Add context.** If you discovered something non-obvious, add a brief note explaining _why_ (e.g. "Chisel v1.4.0 added `hint:` validation; using it on v1 branches causes a parse error").
+- **Preserve structure.** Add new items to the appropriate existing section. Don't create new top-level sections unless the topic is genuinely new.
+- **Remove stale content.** If an upstream change makes a rule obsolete, remove or update it rather than leaving contradictory information.

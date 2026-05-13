@@ -1,0 +1,18 @@
+# mason eval manifest -- models + run knobs only.
+# cases live under tests/cases/<name>/case.yaml -- discovered on the filesystem.
+chisel_releases:
+  url: https://github.com/canonical/chisel-releases.git
+  # pin a sha for reproducibility -- update deliberately
+  # snapshot tip of ubuntu-24.04 at time of writing; bump as needed
+  sha: HEAD
+  branch: ubuntu-26.04
+
+effort: low
+backend: claude
+
+models:
+  - id: claude-haiku-4-5-20251001
+  - id: claude-sonnet-4-6
+
+timeout_seconds: 600
+stuck_timeout_seconds: 300
