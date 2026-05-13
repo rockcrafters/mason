@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# try-cut: run chisel cut from the current chisel-releases dir into a temp root.
+#
+# Usage: try-cut [--arch ARCH] <pkg>_<slice> [<pkg>_<slice> ...]
+
+set -euo pipefail
+
+usage() {
+    cat >&2 <<'EOF'
+Usage: try-cut [--arch ARCH] <pkg>_<slice> [...]
+
+  --arch ARCH   package architecture (passed through to chisel cut)
+
+Runs chisel cut --release <cwd> --root <tmpdir> with the given slices.
+The temp root is created in the current directory (chisel snap compat)
+and removed on exit. Passes chisel output through unchanged.
+EOF
+    exit 1
+}
+
+ARCH=""
+SLICES=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --arch)
+            [[ $# -ge 2 ]] || { echo "error: --arch requires a value" >&2; usage; }
+            ARCH="$2"
+            shift 2
+            ;;
+        --arch=*)
+            ARCH="${1#*=}"
+            shift
+            ;;
+        -h|--help)
+            usage
+            ;;
+        -*)
+            echo "error: unknown option: $1" >&2
+            usage
+            ;;
+        *)
+            SLICES+=("$1")
+            shift
+            ;;
+    esac
+done
+
+if [[ ${#SLICES[@]} -eq 0 ]]; then
+    echo "error: no slices specified" >&2
+    usage
+fi
+
+RELEASE="$(pwd)"
+ROOT="$(mktemp -d "${RELEASE}/chisel-root.XXXXXX")"
+cleanup() {
+    [[ -d "$ROOT" && "$ROOT" == "${RELEASE}/chisel-root."* ]] && rm -rf "$ROOT"
+}
+trap cleanup EXIT
+
+ARCH_FLAG=()
+[[ -n "$ARCH" ]] && ARCH_FLAG=(--arch "$ARCH")
+
+chisel cut --release "$RELEASE" --root "$ROOT" "${ARCH_FLAG[@]}" "${SLICES[@]}"

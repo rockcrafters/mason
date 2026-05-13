@@ -10,6 +10,7 @@ skills/
   write-slice/
     SKILL.md                       # 10-step authoring workflow
     deb-list                       # python script to inspect .deb contents before authoring
+    try-cut                        # bash script to test slices against the current checkout
   review-slice/
     SKILL.md                       # review checklist (CI checks, style, deps, rejection reasons)
 src/plugins/opencode/              # opencode slash-command shims
@@ -49,6 +50,16 @@ maintainer scripts present: postinst  (re-run with --scripts to view)
 ```
 
 Requires `apt-get` + `dpkg-deb` and a populated apt cache.
+
+### `try-cut`
+
+Bash helper at `skills/write-slice/try-cut`. Runs `chisel cut` from the current chisel-releases checkout into a temp root without managing the directory manually:
+
+```
+try-cut [--arch ARCH] <pkg>_<slice> [...]
+```
+
+Passes chisel's output through unchanged and returns its exit code. Useful for quickly validating a new SDF before committing.
 
 ### plugin integrations
 
