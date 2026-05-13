@@ -238,7 +238,6 @@ Or manually:
 ```bash
 mkdir rootfs/
 chisel cut --release ./ --root rootfs/ <package>_<slice>
-sudo chroot rootfs/ <command> --version
 ```
 
 #### Thorough testing for applications
