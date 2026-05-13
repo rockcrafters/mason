@@ -60,7 +60,7 @@ Before designing anything, check whether the package already has slices on **oth
 
    Note the structural decisions: slice names, grouping approach (by-type vs by-function), dependency choices, `mutate:` patterns. These should be carried forward unless there is a concrete reason to diverge.
 
-4. **Compare `.deb` contents across releases.** Run `deb-list` for the target release and for each release that already has an SDF. Look for cross-release differences (see `@./CHISEL.md` Cross-Release Differences table):
+4. **Compare `.deb` contents across releases.** Run `scripts/deb-list` for the target release and for each release that already has an SDF. Look for cross-release differences (see `@./CHISEL.md` Cross-Release Differences table):
    - Path changes (usrmerge: `/bin/` -> `/usr/bin/`)
    - Library renames (t64 transition: `libssl3` -> `libssl3t64`)
    - New or removed files
@@ -80,7 +80,7 @@ If no existing SDFs are found on any branch, this is a net-new package -- procee
 
 Before inspecting or designing anything, build the complete dependency tree. Dependencies MUST be sliced before the target package.
 
-1. **Get the full recursive dependency list.** Use `apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances <package>` to resolve all transitive `Depends:`. Alternatively, run `deb-list <package>` to get direct `Depends:` and recurse manually.
+1. **Get the full recursive dependency list.** Use `apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances <package>` to resolve all transitive `Depends:`. Alternatively, run `scripts/deb-list <package>` to get direct `Depends:` and recurse manually.
 2. **Check which dependencies already have slices** on the target chisel-releases branch (`ls slices/ | sed 's/\.yaml$//'` or `chisel info --release <release> <dep> ...`).
 3. **Identify unsliced dependencies.** Produce an ordered list of packages that need slicing, sorted **leaves-first** (packages with no unsliced dependencies come first).
 4. **Present the plan to the user.** Show:
@@ -97,10 +97,10 @@ Note: only `Depends:` matter. Not `Recommends:` or `Suggests:`. Including `Recom
 
 ### Step 4: Inspect Each Package
 
-For EACH package that needs slicing (starting from leaf dependencies), inspect it using the bundled `deb-list` script:
+For EACH package that needs slicing (starting from leaf dependencies), inspect it using the bundled `scripts/deb-list` script:
 
 ```
-deb-list <package> [arch] [--scripts]
+scripts/deb-list <package> [arch] [--scripts]
 ```
 
 This downloads the `.deb` from the local apt cache and prints:
@@ -114,7 +114,7 @@ This downloads the `.deb` from the local apt cache and prints:
 Example:
 
 ```
-$ deb-list bash
+$ scripts/deb-list bash
 package: bash  version: 5.3-2ubuntu1  arch: amd64
 
 Depends: base-files (>= 2.1.12), debianutils (>= 5.6-0.1)
@@ -136,7 +136,7 @@ Reading the output:
 - `[x]` marks executables (go in `bins`); `[f]` marks regular files.
 - Add `mode:` to a slice entry only when the permission is non-standard (not `0644`/`0755`/`0777`).
 - If `--scripts` shows `postinst` calling `update-alternatives`, `ldconfig`, or `update-mime-database`, those side-effects don't run in a chisel rootfs -- either drop the dep or write a `mutate:` equivalent.
-- Run once per target arch when multiarch differences are expected (`deb-list libfoo amd64`, then `deb-list libfoo arm64`).
+- Run once per target arch when multiarch differences are expected (`scripts/deb-list libfoo amd64`, then `scripts/deb-list libfoo arm64`).
 
 Requires `apt-get` + `dpkg-deb` and a populated apt cache (`sudo apt-get update`).
 
@@ -270,10 +270,10 @@ Testing is mandatory. Depth depends on what the package provides.
 
 #### Manual testing (always do this first)
 
-Use the bundled `try-cut` helper to run a cut from the current checkout without managing the temp root manually:
+Use the bundled `scripts/try-cut` helper to run a cut from the current checkout without managing the temp root manually:
 
 ```bash
-try-cut [--arch ARCH] <package>_<slice>
+scripts/try-cut [--arch ARCH] <package>_<slice>
 ```
 
 Or manually:
