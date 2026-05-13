@@ -1,5 +1,5 @@
 ---
-name: slice
+name: write-slice
 description: >
   Author chisel slice definition files (SDFs) for canonical/chisel-releases.
   Covers dependency-tree-first workflow, package inspection via deb-list,
@@ -12,6 +12,8 @@ description: >
 Skill for authoring slices against [`canonical/chisel-releases`](https://github.com/canonical/chisel-releases).
 
 **Scope**: author + test + commit slices locally. Do NOT open PRs -- user opens PR themselves.
+
+**Existing slices are append-only.** Only modify a published slice if strictly necessary (e.g. fixing a bug, adding a missing dependency, or accommodating an upstream packaging change). Never reorganise, rename, or remove paths from existing slices without a concrete reason -- downstream consumers depend on the current layout. When in doubt, create a new slice rather than changing an existing one.
 
 **Prerequisites**: read `@./CHISEL.md` for chisel/SDF format reference, branch model, schema versions, and canonical naming conventions. This skill focuses on the _workflow_ of writing slices.
 
@@ -464,79 +466,75 @@ slices:
 
 ---
 
-## Step 10: Reflect and Refine the Skill
+## Step 10: Propose a Docs-Alignment Review
 
-After the work is fully complete (SDFs written, tests passing, commit made), perform a reflection pass. The goal is to verify the output against the sources of truth and improve this skill for next time.
+After the work is fully complete (SDFs written, tests passing, commit made), **propose to the user** that they review the result against the official chisel documentation. The [chisel-docs](https://github.com/canonical/chisel-docs) are the authoritative source of truth on how to write slices.
 
-### 10a. Validate against chisel-docs
+Present this to the user:
 
-Fetch the current upstream documentation and compare your work against it:
+> The slices are committed. Before opening a PR, I'd recommend we check the result against the official chisel documentation to make sure everything aligns. Want me to fetch the current docs and compare?
+
+If the user accepts, perform the following checks:
+
+### 10a. Validate against chisel-docs (source of truth)
+
+Fetch the current upstream documentation and compare the authored SDFs against it:
 
 ```bash
-# Fetch the authoritative slicing guide
+# The authoritative slicing guide
 curl -fsSL https://raw.githubusercontent.com/canonical/chisel-docs/main/docs/how-to/slice-a-package.md
 
-# Fetch the SDF format reference
+# SDF format reference
 curl -fsSL https://raw.githubusercontent.com/canonical/chisel-docs/main/docs/reference/chisel-releases/slice-definitions.md
 
-# Fetch the chisel.yaml reference (for schema version rules)
+# chisel.yaml reference (schema version rules)
 curl -fsSL https://raw.githubusercontent.com/canonical/chisel-docs/main/docs/reference/chisel-releases/chisel.yaml.md
 
-# Fetch the slice design approaches
+# Slice design approaches
 curl -fsSL https://raw.githubusercontent.com/canonical/chisel-docs/main/docs/explanation/slice-design-approaches.md
 ```
 
-Check:
-- Did the workflow in this skill match the documented process? Are there new steps or changed recommendations?
-- Are there new SDF fields, content path options, or `mutate:` functions not covered here?
-- Has the `chisel.yaml` format version table changed (new versions, new branches)?
-- Are there new design approaches or naming conventions?
+Check and report to the user:
+- Does the SDF use any fields or patterns not documented in the official reference?
+- Does the slice design approach match documented recommendations?
+- Are there new SDF fields, content path options, or `mutate:` functions in the docs that could improve the result?
+- Is the `format:` version on the target branch compatible with all features used?
 
-### 10b. Validate against chisel-releases
+### 10b. Cross-check against existing slices
 
-Compare your output against existing SDFs on the target branch:
+Compare the output against canonical reference SDFs on the target branch:
 
 ```bash
-# Read a few canonical reference SDFs on the target branch
 curl -fsSL https://raw.githubusercontent.com/canonical/chisel-releases/<branch>/slices/bash.yaml
 curl -fsSL https://raw.githubusercontent.com/canonical/chisel-releases/<branch>/slices/base-files.yaml
-
-# Read the CONTRIBUTING.md for any updated rules
 curl -fsSL https://raw.githubusercontent.com/canonical/chisel-releases/main/CONTRIBUTING.md
-
-# Check if there are new CI workflows or checks
-curl -fsSL https://github.com/canonical/chisel-releases/tree/main/.github/workflows
 ```
 
-Check:
-- Does your SDF formatting match the patterns in `bash.yaml` / `base-files.yaml`?
-- Are there new slice naming conventions that existing SDFs use but this skill doesn't document?
-- Have contribution rules changed (new CI checks, new forward-port rules, etc.)?
-- Are there new reviewer patterns visible in recent PRs?
+Check and report:
+- Does the formatting match established patterns?
+- Are naming conventions consistent with existing SDFs?
+- Have contribution rules changed since this skill was last updated?
 
-### 10c. Validate against chisel tool behaviour
+### 10c. Check tool behaviour (if issues arose)
 
-If anything behaved unexpectedly during `chisel cut` (e.g. a field was ignored, a wildcard didn't match as expected, mutate ran differently than documented):
+If anything behaved unexpectedly during `chisel cut` (a field was ignored, a wildcard didn't match, mutate ran differently than documented):
 
 ```bash
-# Check the chisel source for the relevant parsing/logic
 curl -fsSL https://raw.githubusercontent.com/canonical/chisel/main/internal/setup/setup.go
 ```
 
-Check:
-- Did chisel accept or reject anything that this skill said was valid/invalid?
-- Are there new CLI flags, new `contents` options, or changed validation rules?
+The tool's actual behaviour overrides any written convention.
 
-### 10d. Update the skill files
+### 10d. Update skill files if needed
 
-If any discrepancies were found, update the relevant skill file:
+If the review found discrepancies between the docs and this skill's guidance, update the relevant file:
 
 - **Factual corrections** (format versions, field names, CLI syntax, arch names) -> update `@./CHISEL.md`
-- **Workflow changes** (new inspection steps, changed design recommendations, new testing requirements) -> update this file (`slice/SKILL.md`)
-- **Review criteria changes** (new CI checks, changed rejection reasons, new style rules) -> update `reviewer/SKILL.md`
+- **Workflow changes** (new inspection steps, changed design recommendations, new testing requirements) -> update this file (`write-slice/SKILL.md`)
+- **Review criteria changes** (new CI checks, changed rejection reasons, new style rules) -> update `review-slice/SKILL.md`
 
 When updating, follow these principles:
-- **Be specific.** Don't add vague guidance. Add the exact rule, the exact field name, the exact formatting.
-- **Add context.** If you discovered something non-obvious, add a brief note explaining _why_ (e.g. "Chisel v1.4.0 added `hint:` validation; using it on v1 branches causes a parse error").
-- **Preserve structure.** Add new items to the appropriate existing section. Don't create new top-level sections unless the topic is genuinely new.
-- **Remove stale content.** If an upstream change makes a rule obsolete, remove or update it rather than leaving contradictory information.
+- **Be specific.** Add the exact rule, the exact field name, the exact formatting.
+- **Add context.** Explain _why_ if non-obvious (e.g. "Chisel v1.4.0 added `hint:` validation; using it on v1 branches causes a parse error").
+- **Preserve structure.** Add to existing sections; don't create new top-level sections unless the topic is genuinely new.
+- **Remove stale content.** Don't leave contradictory information.
