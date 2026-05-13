@@ -186,6 +186,75 @@ Always use Debian arch names in `arch:` fields: `amd64`, `arm64`, `armhf`, `i386
 - **Cross-toolchain packages** (`<tool>-<triple>-linux-gnu`, e.g. `binutils-aarch64-linux-gnu`) ship prefixed binaries (`aarch64-linux-gnu-ld`). Unprefixed symlinks (`/usr/bin/ld -> aarch64-linux-gnu-ld`) are **not** in the cross deb -- consumers create them. Convention: arch-specific SDFs leave them out; top-level `binutils` SDF carries the unprefixed name with a `# -> ${ARCH_TRIPLET}-ld` comment.
 - **`/proc/self/exe` linker workaround** for chroot Java tests: `tests/spread/lib/link-proc`. Needed because chroot breaks `/proc/self/exe`.
 
+## Cross-Release Differences
+
+SDFs for the same package differ across Ubuntu release branches. Forward-porting is **adaptation, not copy-paste**. Always run `deb-list` against each target release and verify actual `.deb` contents.
+
+| Category | Example | What changes |
+|----------|---------|-------------|
+| **usrmerge** | `/bin/bash` -> `/usr/bin/bash` | Ubuntu 24.04+ moved binaries from `/bin/` to `/usr/bin/`. Update `contents` paths per release |
+| **t64 transition** | `libssl3` -> `libssl3t64` | Ubuntu 24.04+ renamed libraries for 64-bit `time_t`. Update `essential` deps and copyright refs |
+| **Package splits/renames** | Transitional packages, new soname packages | May need entirely different SDF structure or filename |
+| **Soname bumps** | `librocksdb9.11` -> `librocksdb10` | Old SDF deleted (archive no longer carries it); new SDF with new filename |
+| **Essential syntax** | List (`- foo_bar`) vs map (`foo_bar:`) | v3 branches may use map syntax in `essential:`. Match the convention of the target branch |
+| **Slice granularity** | `bashbug` inline in `bins` (24.04) vs separate `bashbug` slice (26.04) | Newer releases may demand finer-grained decomposition |
+| **New/removed files** | New config files, removed scripts | `.deb` contents change between releases. Some paths exist in one release but not another |
+| **Dependency changes** | New deps added, old deps dropped | `Depends:` may differ. Always re-check with `deb-list` or `apt-cache depends` |
+
+## Spread Test Infrastructure
+
+Integration tests in chisel-releases use [spread](https://github.com/canonical/spread) to validate slices inside ephemeral containers.
+
+### Layout
+
+```
+spread.yaml                                         # project config (backends, global prepare)
+tests/spread/integration/<pkg>/task.yaml            # per-package test
+tests/spread/lib/                                   # shared helpers (on PATH via spread.yaml)
+```
+
+### `install-slices` helper
+
+Located at `tests/spread/lib/install-slices`. Added to `PATH` by `spread.yaml`. Usage:
+
+```bash
+rootfs="$(install-slices <pkg>_<slice> [<pkg2>_<slice2> ...])"
+```
+
+What it does:
+1. Creates a temporary directory for the rootfs.
+2. Runs `chisel cut --release "$PROJECT_PATH" --root "$rootfs" $slices` -- validates against the **local checkout**.
+3. Automatically appends `base-files_chisel` to every cut (for manifest generation). You do not need to include it.
+4. Retries on transient archive fetch failures (up to 3 attempts).
+5. Prints the rootfs path to stdout.
+
+This is the same operation as manual `chisel cut --release ./ --root <dir>` but wrapped with retry logic and manifest support.
+
+### Two-layer testing model
+
+- **Layer 1 -- installability**: `chisel cut` succeeds. The SDF parses, dependencies resolve, files extract. This is what the `install-slices` CI check validates.
+- **Layer 2 -- functionality**: `chroot` + commands prove the sliced rootfs actually works. This is what spread tests validate.
+
+Both layers are required. A slice that installs but doesn't function is rejected.
+
+### Chroot environment patterns
+
+Sliced rootfs is minimal. Tests that need more than bare files must set up the chroot:
+
+| Need | Pattern |
+|------|---------|
+| Network (DNS) | `cp /etc/resolv.conf "${rootfs}/etc/"` |
+| `/dev/null` | `mkdir -p "${rootfs}/dev" && touch "${rootfs}/dev/null"` |
+| `/bin/sh` | `ln "${rootfs}/bin/bash" "${rootfs}/bin/sh"` (or whichever shell is available) |
+| `/proc/self/exe` (Java) | Use `tests/spread/lib/link-proc` helper |
+
+### Backends
+
+`spread.yaml` configures two backends:
+
+- **lxd** -- default for local development. Ephemeral LXC containers.
+- **docker** -- used in CI for multi-arch testing: `amd64`, `arm64`, `armhf`, `ppc64el`, `s390x`, `riscv64`.
+
 ## Sources of Truth
 
 The knowledge in this file and the associated skills is derived from three upstream projects. When in doubt, **always defer to these sources** over anything written here.

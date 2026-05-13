@@ -33,7 +33,50 @@ Follow these steps in order. Do NOT skip steps.
 4. **Check `format:` version** in `chisel.yaml`. This gates available features (see `@./CHISEL.md` schema versions table). Do not use v2+/v3+ features on older formats.
 5. **Avoid duplicates.** Check `slices/<pkg>.yaml` does not already exist on the target branch. If it does, stop and inform the user.
 
-### Step 2: Build the Full Dependency Tree
+### Step 2: Check Cross-Release Consistency
+
+Before designing anything, check whether the package already has slices on **other** release branches. Existing SDFs inform the design and are required context for forward-porting.
+
+1. **List all live release branches.**
+
+   ```bash
+   git ls-remote --heads https://github.com/canonical/chisel-releases.git 'ubuntu-*' \
+     | awk '{print $2}' | sed 's|refs/heads/||'
+   ```
+
+2. **Check which branches already have an SDF** for the target package.
+
+   ```bash
+   # For each branch:
+   curl -fsSL -o /dev/null -w "%{http_code}" \
+     https://raw.githubusercontent.com/canonical/chisel-releases/<branch>/slices/<pkg>.yaml
+   ```
+
+3. **Fetch and study existing SDFs.** If the package has slices on any branch, download them:
+
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/canonical/chisel-releases/<branch>/slices/<pkg>.yaml
+   ```
+
+   Note the structural decisions: slice names, grouping approach (by-type vs by-function), dependency choices, `mutate:` patterns. These should be carried forward unless there is a concrete reason to diverge.
+
+4. **Compare `.deb` contents across releases.** Run `deb-list` for the target release and for each release that already has an SDF. Look for cross-release differences (see `@./CHISEL.md` Cross-Release Differences table):
+   - Path changes (usrmerge: `/bin/` -> `/usr/bin/`)
+   - Library renames (t64 transition: `libssl3` -> `libssl3t64`)
+   - New or removed files
+   - Changed dependencies
+   - Package splits or soname bumps
+
+5. **Document the differences.** Record what will need adaptation when writing the SDF and when forward-porting. Present a summary to the user.
+
+6. **Carry forward structural decisions** from existing SDFs. Consistency across releases matters for forward-port reviewability. Diverge only when:
+   - The `.deb` contents changed enough to require a different structure
+   - Upstream packaging changed (split, rename, new soname)
+   - Reviewers on the existing SDF's branch requested a specific structure
+
+If no existing SDFs are found on any branch, this is a net-new package -- proceed to Step 3.
+
+### Step 3: Build the Full Dependency Tree
 
 Before inspecting or designing anything, build the complete dependency tree. Dependencies MUST be sliced before the target package.
 
@@ -52,7 +95,7 @@ IMPORTANT: Slice dependencies bottom-up. A package cannot reference slices that 
 
 Note: only `Depends:` matter. Not `Recommends:` or `Suggests:`. Including `Recommends:` is rejected by reviewers.
 
-### Step 3: Inspect Each Package
+### Step 4: Inspect Each Package
 
 For EACH package that needs slicing (starting from leaf dependencies), inspect it using the bundled `deb-list` script:
 
@@ -123,7 +166,7 @@ Use the source to:
 - Identify optional vs mandatory dependencies
 - Check for hardcoded paths that must be included in slices
 
-### Step 4: Ensure Consistency with Existing Slices
+### Step 5: Ensure Consistency with Existing Slices
 
 Before designing new slices, study existing SDFs on the target branch.
 
@@ -137,7 +180,7 @@ Before designing new slices, study existing SDFs on the target branch.
    Search existing slices: `grep -r "/path/you/want" slices/`
 5. **Respect the append-only principle.** Removing files from existing published slices is a regression. If you need a slimmer variant, create a new slice (`core`, `minimal`, etc.) rather than removing from an existing one.
 
-### Step 5: Design the Slices
+### Step 6: Design the Slices
 
 Choose the approach that fits the package best.
 
@@ -163,7 +206,7 @@ Typical structure:
 
 Do NOT mix approaches arbitrarily within a single SDF.
 
-### Step 6: Write the SDF
+### Step 7: Write the SDF
 
 Create `slices/<package>.yaml`:
 
@@ -200,7 +243,7 @@ Key rules:
 
 Upstream `LICENSE.txt`, `NOTICE`, `ThirdPartyNotices.txt` are **not** the deb copyright. They get separate `license:` / `notice:` slices that depend on `<pkg>_copyright`.
 
-### Step 7: Apply Formatting Rules
+### Step 8: Apply Formatting Rules
 
 These are **mandatory**. CI and reviewers reject non-conforming SDFs.
 
