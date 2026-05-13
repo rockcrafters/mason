@@ -166,10 +166,37 @@ def pytest_runtest_makereport(item: "Item", call):
     rows.append(_Row(nodeid=report.nodeid, score=score, params=params, scored=scored))
 
 
+_RED = "\033[31m"
+_YELLOW = "\033[33m"
+_GREEN = "\033[32m"
+_RESET = "\033[0m"
+
+
 def _bar(score: float, width: int) -> str:
     filled = int(round(score * width))
     filled = max(0, min(width, filled))
     return "[" + "#" * filled + "-" * (width - filled) + "]"
+
+
+def _color_for(score: float) -> str:
+    if score < 0.5:
+        return _RED
+    if score < 0.8:
+        return _YELLOW
+    return _GREEN
+
+
+def _fmt_score_bar(score: float, width: int, *, color: bool) -> str:
+    text = f"{score:5.2f}  {_bar(score, width)}"
+    if not color:
+        return text
+    return f"{_color_for(score)}{text}{_RESET}"
+
+
+def _strip_file_prefix(nodeid: str) -> str:
+    """`slice/test_x.py::test_y[...]` -> `test_y[...]`."""
+    sep = nodeid.rfind("::")
+    return nodeid[sep + 2:] if sep != -1 else nodeid
 
 
 def _group_averages(rows: list[_Row]) -> dict[str, dict[str, tuple[float, int]]]:
@@ -193,13 +220,15 @@ def pytest_terminal_summary(terminalreporter: "TerminalReporter") -> None:
         return
     width = config.getoption("--scored-bar-width")
     tr = terminalreporter
+    color = getattr(tr, "hasmarkup", False)
     tr.write_sep("=", "SCORED TESTS")
-    name_w = max((len(r.nodeid) for r in rows), default=20)
-    name_w = min(name_w, 60)
+    labels = [_strip_file_prefix(r.nodeid) for r in rows]
+    name_w = min(max((len(label) for label in labels), default=20), 60)
     tr.write_line(f"{'test'.ljust(name_w)}  {'score':>5}  bar")
-    for r in rows:
+    for label, r in zip(labels, rows):
         tr.write_line(
-            f"{r.nodeid[:name_w].ljust(name_w)}  {r.score:5.2f}  {_bar(r.score, width)}"
+            f"{label[:name_w].ljust(name_w)}  "
+            f"{_fmt_score_bar(r.score, width, color=color)}"
         )
 
     groups = _group_averages(rows)
@@ -210,14 +239,17 @@ def pytest_terminal_summary(terminalreporter: "TerminalReporter") -> None:
         val_w = max((len(v) for v in vals), default=10)
         for v, (avg, n) in sorted(vals.items()):
             tr.write_line(
-                f"  {v.ljust(val_w)}  avg (n={n})  {avg:5.2f}  {_bar(avg, width)}"
+                f"  {v.ljust(val_w)}  avg (n={n})  "
+                f"{_fmt_score_bar(avg, width, color=color)}"
             )
             if threshold is not None and avg < threshold:
                 failures.append(f"{axis}={v} avg {avg:.2f} < {threshold}")
 
     overall = sum(r.score for r in rows) / len(rows)
     tr.write_sep("-", "overall")
-    tr.write_line(f"  avg (n={len(rows)})  {overall:5.2f}  {_bar(overall, width)}")
+    tr.write_line(
+        f"  avg (n={len(rows)})  {_fmt_score_bar(overall, width, color=color)}"
+    )
 
     out_path = config.getoption("--scored-report")
     if out_path:
