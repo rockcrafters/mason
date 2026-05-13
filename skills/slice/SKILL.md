@@ -237,7 +237,7 @@ files (lexicographic):  [x]=executable  [f]=file  [l]=symlink
   [f] /usr/share/doc/bash/copyright
   ...
 
-maintainer scripts present: postinst, prerm, postrm  (re-run with --scripts to view)
+maintainer scripts present: postinst  (re-run with --scripts to view)
 ```
 
 Add `--scripts` to print the full bodies of all present maintainer scripts.

@@ -26,12 +26,10 @@ import tempfile
 from pathlib import Path
 
 
-# Maintainer scripts run by dpkg around install/remove, in execution order.
+# Only install-time scripts matter for slice authoring; remove scripts are irrelevant.
 MAINTAINER_SCRIPTS = [
     ("preinst",  "before install"),
     ("postinst", "after install"),
-    ("prerm",    "before remove"),
-    ("postrm",   "after remove"),
 ]
 
 
