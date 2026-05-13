@@ -134,7 +134,7 @@ class _Progress:
             sub = event.get("subtype")
             if sub == "init":
                 model = event.get("model", "?")
-                log.info("   %s%s init model=%s", self.tag, self._stamp(), model)
+                log.info("%s%s init model=%s", self.tag, self._stamp(), model)
             return
         if etype == "assistant":
             message = event.get("message") or {}
@@ -146,14 +146,14 @@ class _Progress:
                     text = block.get("text") or ""
                     if text.strip():
                         self.msg_count += 1
-                        log.info("   %s%s text: %s", self.tag, self._stamp(), _oneline(text))
+                        log.info("%s%s text: %s", self.tag, self._stamp(), _oneline(text))
                 elif btype == "tool_use":
                     self.tool_count += 1
                     name = block.get("name", "?")
                     inp = block.get("input") or {}
                     summary = ", ".join(f"{k}={_oneline(repr(v))}" for k, v in inp.items())
                     log.info(
-                        "   %s%s tool[%d]: %s(%s)",
+                        "%s%s tool[%d]: %s(%s)",
                         self.tag, self._stamp(), self.tool_count, name, summary,
                     )
             return
@@ -169,7 +169,7 @@ class _Progress:
                     continue
                 content = block.get("content")
                 if isinstance(content, str) and "denied" in content.lower():
-                    log.warning("   %s%s BLOCKED: %s", self.tag, self._stamp(), _oneline(content))
+                    log.warning("%s%s BLOCKED: %s", self.tag, self._stamp(), _oneline(content))
             return
         if etype == "result":
             cost = event.get("total_cost_usd") or event.get("cost_usd")
@@ -183,7 +183,7 @@ class _Progress:
                 extras.append(f"in={it}")
             if ot is not None:
                 extras.append(f"out={ot}")
-            log.info("   %s%s done %s", self.tag, self._stamp(), " ".join(extras))
+            log.info("%s%s done %s", self.tag, self._stamp(), " ".join(extras))
 
 
 class _ThreadFilter(logging.Filter):
@@ -426,7 +426,7 @@ def main(argv: list[str] | None = None) -> int:
             res["job"] = jt
             results.append(res)
             _pair_complete()
-            log.info("   [%s] %s", jt, res["status"])
+            log.info("[%s] %s", jt, res["status"])
     else:
         log.info("running %d pairs across %s jobs", n, jobs if jobs else "unlimited")
         with ThreadPoolExecutor(max_workers=jobs) as ex:
@@ -451,7 +451,7 @@ def main(argv: list[str] | None = None) -> int:
     log.info("---")
     for r in results:
         extra = f" ({r.get('duration_s', 0)}s)" if "duration_s" in r else ""
-        log.info("  [%s] %-20s %-40s %s%s", r.get("job", "--"), r["case"], r["model"], r["status"], extra)
+        log.info("[%s] %-20s %-40s %s%s", r.get("job", "--"), r["case"], r["model"], r["status"], extra)
     return 0
 
 
