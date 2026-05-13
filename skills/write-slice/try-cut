@@ -51,10 +51,14 @@ if [[ ${#SLICES[@]} -eq 0 ]]; then
     usage
 fi
 
-ROOT="$(mktemp -d ./chisel-root.XXXXXX)"
-trap 'rm -rf "$ROOT"' EXIT
+RELEASE="$(pwd)"
+ROOT="$(mktemp -d "${RELEASE}/chisel-root.XXXXXX")"
+cleanup() {
+    [[ -d "$ROOT" && "$ROOT" == "${RELEASE}/chisel-root."* ]] && rm -rf "$ROOT"
+}
+trap cleanup EXIT
 
 ARCH_FLAG=()
 [[ -n "$ARCH" ]] && ARCH_FLAG=(--arch "$ARCH")
 
-chisel cut --release "$(pwd)" --root "$ROOT" "${ARCH_FLAG[@]}" "${SLICES[@]}"
+chisel cut --release "$RELEASE" --root "$ROOT" "${ARCH_FLAG[@]}" "${SLICES[@]}"
