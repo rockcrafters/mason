@@ -1,5 +1,5 @@
 ---
-name: reviewer
+name: review-slice
 description: >
   Review chisel slice definition files (SDFs) for canonical/chisel-releases.
   Covers CI checks, reviewer conventions, style enforcement, dependency
@@ -184,9 +184,9 @@ The tool's actual behaviour overrides any written convention.
 ### Update the skill files
 
 If discrepancies were found:
-- **Review criteria changes** (new CI checks, changed style rules, new rejection reasons) -> update this file (`reviewer/SKILL.md`)
+- **Review criteria changes** (new CI checks, changed style rules, new rejection reasons) -> update this file (`review-slice/SKILL.md`)
 - **Factual corrections** (format versions, field names, valid values) -> update `@./CHISEL.md`
-- **Workflow changes** (new steps, changed recommendations) -> update `slice/SKILL.md`
+- **Workflow changes** (new steps, changed recommendations) -> update `write-slice/SKILL.md`
 
 Principles:
 - Be specific: add exact rules, not vague guidance.
