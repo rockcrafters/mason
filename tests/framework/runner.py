@@ -10,7 +10,9 @@ import hashlib
 import json
 import sys
 import tempfile
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
 from pathlib import Path
 
@@ -75,10 +77,11 @@ def _oneline(s: str) -> str:
 class _Progress:
     """Log full event detail per claude stream-json event."""
 
-    def __init__(self) -> None:
+    def __init__(self, tag: str = "") -> None:
         self.t0 = _time.monotonic()
         self.tool_count = 0
         self.msg_count = 0
+        self.tag = f"[{tag}] " if tag else ""
 
     def _stamp(self) -> str:
         return f"[{_time.monotonic() - self.t0:5.1f}s]"
@@ -89,7 +92,7 @@ class _Progress:
             sub = event.get("subtype")
             if sub == "init":
                 model = event.get("model", "?")
-                log.info("   %s init model=%s", self._stamp(), model)
+                log.info("   %s%s init model=%s", self.tag, self._stamp(), model)
             return
         if etype == "assistant":
             message = event.get("message") or {}
@@ -101,15 +104,15 @@ class _Progress:
                     text = block.get("text") or ""
                     if text.strip():
                         self.msg_count += 1
-                        log.info("   %s text: %s", self._stamp(), _oneline(text))
+                        log.info("   %s%s text: %s", self.tag, self._stamp(), _oneline(text))
                 elif btype == "tool_use":
                     self.tool_count += 1
                     name = block.get("name", "?")
                     inp = block.get("input") or {}
                     summary = ", ".join(f"{k}={_oneline(repr(v))}" for k, v in inp.items())
                     log.info(
-                        "   %s tool[%d]: %s(%s)",
-                        self._stamp(), self.tool_count, name, summary,
+                        "   %s%s tool[%d]: %s(%s)",
+                        self.tag, self._stamp(), self.tool_count, name, summary,
                     )
             return
         if etype == "user":
@@ -124,7 +127,7 @@ class _Progress:
                     continue
                 content = block.get("content")
                 if isinstance(content, str) and "denied" in content.lower():
-                    log.warning("   %s BLOCKED: %s", self._stamp(), _oneline(content))
+                    log.warning("   %s%s BLOCKED: %s", self.tag, self._stamp(), _oneline(content))
             return
         if etype == "result":
             cost = event.get("total_cost_usd") or event.get("cost_usd")
@@ -138,7 +141,18 @@ class _Progress:
                 extras.append(f"in={it}")
             if ot is not None:
                 extras.append(f"out={ot}")
-            log.info("   %s done %s", self._stamp(), " ".join(extras))
+            log.info("   %s%s done %s", self.tag, self._stamp(), " ".join(extras))
+
+
+class _ThreadFilter(logging.Filter):
+    """Only accept records emitted from the registered thread -- used to keep
+    per-pair run.log files clean when running pairs in parallel."""
+    def __init__(self, tid: int) -> None:
+        super().__init__()
+        self.tid = tid
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.thread == self.tid
 
 
 def _build_prompt(case: Case) -> str:
@@ -146,7 +160,7 @@ def _build_prompt(case: Case) -> str:
     # note: this is an eval of the slice skill itself -- agent has no upstream
     # access; whatever's in cwd is all it gets.
     return (
-        f"/slice {case.package} {case.branch}\n"
+        f"/mason:write-slice {case.package} {case.branch}\n"
         f"\n"
         f"context: this is an automated eval of the slice skill. cwd is a "
         f"bare snapshot of chisel-releases on `{case.branch}` (no `.git`). "
@@ -195,6 +209,7 @@ def run_pair(
     chisel_clone: Path,
     *,
     force: bool,
+    job_tag: str = "",
 ) -> dict:
     out_dir = _run_dir(model, case)
     result_path = out_dir / f"{case.package}.yaml"
@@ -241,9 +256,11 @@ def run_pair(
         run_log_path = out_dir / "run.log"
         run_log_handler = logging.FileHandler(run_log_path, mode="w", encoding="utf-8")
         run_log_handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+        run_log_handler.addFilter(_ThreadFilter(threading.get_ident()))
         log.addHandler(run_log_handler)
         t0 = time.monotonic()
-        progress = _Progress()
+        tag = f"{job_tag} {case.name}/{model.id}".strip()
+        progress = _Progress(tag=tag)
         try:
             backend = get_backend(
                 model.backend,
@@ -304,7 +321,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--force", action="store_true", help="re-run pairs already cached")
     ap.add_argument("--model", default=None, help="only run model ids containing this substring")
     ap.add_argument("--case", default=None, help="only run case names containing this substring")
+    ap.add_argument(
+        "-j", "--jobs",
+        type=int,
+        default=4,
+        help="parallel pair jobs (default 4; 1 = serial; -1 = unlimited)",
+    )
     args = ap.parse_args(argv)
+    if args.jobs == 0 or args.jobs < -1:
+        ap.error("--jobs must be a positive integer or -1 for unlimited.")
 
     manifest = load_manifest(MANIFEST_PATH)
     cases = discover_cases(CASES_DIR)
@@ -315,29 +340,63 @@ def main(argv: list[str] | None = None) -> int:
         print("no models in manifest", file=sys.stderr)
         return 1
 
-    results: list[dict] = []
+    # build the pair list + pre-fetch clones serially (avoid concurrent git
+    # ops on the same per-branch dir).
+    pairs: list[tuple[Case, Model, Path]] = []
+    clones: dict[tuple[str, str | None], Path] = {}
     for case in cases:
         if not _filter(case.name, args.case):
             continue
-        # per-case clone (per-branch dir, idempotent). cached across cases on
-        # the same branch within a single run.
-        clone = ensure_chisel_releases_clone(
-            url=manifest.chisel_releases_url,
-            branch=case.branch,
-            sha=case.sha,
-        )
+        key = (case.branch, case.sha)
+        clone = clones.get(key)
+        if clone is None:
+            clone = ensure_chisel_releases_clone(
+                url=manifest.chisel_releases_url,
+                branch=case.branch,
+                sha=case.sha,
+            )
+            clones[key] = clone
         for model in manifest.models:
             if not _filter(model.id, args.model):
                 continue
-            log.info("-> %s x %s", case.name, model.id)
-            res = run_pair(case, model, manifest, clone, force=args.force)
+            pairs.append((case, model, clone))
+
+    results: list[dict] = []
+    n = len(pairs)
+    width = max(1, len(str(n)))
+    jobs = None if args.jobs == -1 else args.jobs
+    job_tags = [f"j{i + 1:0{width}d}" for i in range(n)]
+    if jobs == 1 or n <= 1:
+        for (case, model, clone), jt in zip(pairs, job_tags):
+            log.info("-> [%s] %s x %s", jt, case.name, model.id)
+            res = run_pair(case, model, manifest, clone, force=args.force, job_tag=jt)
+            res["job"] = jt
             results.append(res)
-            log.info("   %s", res["status"])
+            log.info("   [%s] %s", jt, res["status"])
+    else:
+        log.info("running %d pairs across %s jobs", n, jobs if jobs else "unlimited")
+        with ThreadPoolExecutor(max_workers=jobs) as ex:
+            futs = {}
+            for (case, model, clone), jt in zip(pairs, job_tags):
+                fut = ex.submit(
+                    run_pair, case, model, manifest, clone,
+                    force=args.force, job_tag=jt,
+                )
+                futs[fut] = (case, model, jt)
+            for fut in as_completed(futs):
+                case, model, jt = futs[fut]
+                try:
+                    res = fut.result()
+                except Exception as exc:
+                    res = {"case": case.name, "model": model.id, "status": f"error: {exc}"}
+                res["job"] = jt
+                results.append(res)
+                log.info("<- [%s] %s x %s  %s", jt, case.name, model.id, res["status"])
 
     log.info("---")
     for r in results:
         extra = f" ({r.get('duration_s', 0)}s)" if "duration_s" in r else ""
-        log.info("  %-20s %-40s %s%s", r["case"], r["model"], r["status"], extra)
+        log.info("  [%s] %-20s %-40s %s%s", r.get("job", "--"), r["case"], r["model"], r["status"], extra)
     return 0
 
 

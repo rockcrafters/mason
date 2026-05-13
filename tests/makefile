@@ -11,6 +11,7 @@ UVX ?= uvx
 MODEL := $(or $(MODEL),)
 CASE := $(or $(CASE),)
 FORCE := $(or $(FORCE),)
+JOBS := $(or $(JOBS),4)
 KFILTER := $(strip $(MODEL) $(CASE))
 ifeq ($(KFILTER),)
   PYTEST_K :=
@@ -27,6 +28,9 @@ ifneq ($(CASE),)
 endif
 ifneq ($(FORCE),)
   RUN_ARGS += --force
+endif
+ifneq ($(JOBS),)
+  RUN_ARGS += -j $(JOBS)
 endif
 
 help:  ## Show this help
