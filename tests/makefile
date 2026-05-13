@@ -68,6 +68,17 @@ format:  ## ruff format + ruff check --fix
 .PHONY: verify
 verify: lint test  ## Aggregate gate: lint + score
 
+.PHONY: show-diff
+show-diff:  ## Diff expected vs actual for a cached run (fzf picker if no spec)
+	@$(UV) run python -m tools.show_diff $(filter-out $@,$(MAKECMDGOALS))
+
+.PHONY: show-logs
+show-logs:  ## View run/stdout/stderr/prompt/meta for a cached run (WHICH=run|stdout|stderr|prompt|meta)
+	@$(UV) run python -m tools.show_logs $(if $(WHICH),--which $(WHICH)) $(filter-out $@,$(MAKECMDGOALS))
+
+%:
+	@:
+
 .PHONY: clean
 clean:  ## Nuke .cache (clones, runs, reports)
 	rm -rf $(CACHE)
