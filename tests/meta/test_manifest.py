@@ -25,7 +25,6 @@ def test_load_manifest_basic(tmp_path: Path) -> None:
     p.write_text(yaml.safe_dump(raw), encoding="utf-8")
     m = load_manifest(p)
     assert m.chisel_releases_url == "u"
-    assert m.chisel_releases_default_branch == "ubuntu-26.04"
     assert m.timeout_seconds == 600
     assert len(m.models) == 2
     assert m.models[0].effort == "low"   # default

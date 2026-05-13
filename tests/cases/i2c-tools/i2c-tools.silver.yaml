@@ -1,0 +1,36 @@
+package: i2c-tools
+
+essential:
+  - i2c-tools_copyright
+
+slices:
+  bins:
+    essential:
+      - libc6_libs
+      - libi2c0_libs
+    contents:
+      /usr/sbin/i2c-stub-from-dump:
+      /usr/sbin/i2cdetect:
+      /usr/sbin/i2cdump:
+      /usr/sbin/i2cget:
+      /usr/sbin/i2cset:
+      /usr/sbin/i2ctransfer:
+
+  scripts:
+    essential:
+      - perl-base_perl-base
+    contents:
+      /usr/bin/ddcmon:
+      /usr/bin/decode-dimms:
+      /usr/bin/decode-edid:
+      /usr/bin/decode-vaio:
+
+  rules:
+    essential:
+      - udev_rules
+    contents:
+      /usr/lib/udev/rules.d/60-i2c-tools.rules:
+
+  copyright:
+    contents:
+      /usr/share/doc/i2c-tools/copyright:

@@ -1,0 +1,8 @@
+name: ipmitool
+kind: denovo
+package: ipmitool
+branch: ubuntu-26.04
+targets:
+  - freeipmi-common
+  - libfreeipmi17
+  - ipmitool

@@ -1,0 +1,83 @@
+package: udev
+
+essential:
+  - udev_copyright
+
+slices:
+  bins:
+    essential:
+      - libc6_libs
+      - libkmod2_libs
+      - libsystemd-shared_libs
+      - libudev1_libs
+      - udev_config
+      - udev_rules
+    contents:
+      /usr/bin/systemd-hwdb:
+      /usr/bin/udevadm:
+      /usr/lib/systemd/systemd-udevd:  # symlink -> ../../bin/udevadm
+
+  helpers:
+    essential:
+      - libc6_libs
+    contents:
+      /usr/lib/udev/ata_id:
+      /usr/lib/udev/cdrom_id:
+      /usr/lib/udev/dmi_memory_id:
+      /usr/lib/udev/fido_id:
+      /usr/lib/udev/iocost:
+      /usr/lib/udev/mtd_probe:
+      /usr/lib/udev/scsi_id:
+      /usr/lib/udev/v4l_id:
+
+  config:
+    contents:
+      /etc/udev/iocost.conf:
+      /etc/udev/udev.conf:
+
+  rules:
+    contents:
+      /usr/lib/udev/rules.d/**:
+
+  hwdb:
+    contents:
+      /usr/lib/udev/hwdb.d/**:
+
+  services:
+    contents:
+      /usr/lib/systemd/system/sockets.target.wants/systemd-udevd-control.socket:  # symlink -> ../systemd-udevd-control.socket
+      /usr/lib/systemd/system/sockets.target.wants/systemd-udevd-kernel.socket:   # symlink -> ../systemd-udevd-kernel.socket
+      /usr/lib/systemd/system/sockets.target.wants/systemd-udevd-varlink.socket:  # symlink -> ../systemd-udevd-varlink.socket
+      /usr/lib/systemd/system/sysinit.target.wants/systemd-hwdb-update.service:   # symlink -> ../systemd-hwdb-update.service
+      /usr/lib/systemd/system/sysinit.target.wants/systemd-udev-trigger.service:  # symlink -> ../systemd-udev-trigger.service
+      /usr/lib/systemd/system/sysinit.target.wants/systemd-udevd.service:         # symlink -> ../systemd-udevd.service
+      /usr/lib/systemd/system/systemd-hwdb-update.service:
+      /usr/lib/systemd/system/systemd-udev-load-credentials.service:
+      /usr/lib/systemd/system/systemd-udev-settle.service:
+      /usr/lib/systemd/system/systemd-udev-trigger.service:
+      /usr/lib/systemd/system/systemd-udevd-control.socket:
+      /usr/lib/systemd/system/systemd-udevd-kernel.socket:
+      /usr/lib/systemd/system/systemd-udevd-varlink.socket:
+      /usr/lib/systemd/system/systemd-udevd.service:
+      /usr/lib/systemd/system/systemd-udevd.service.d/syscall-architecture.conf:
+
+  network-config:
+    contents:
+      /usr/lib/systemd/network/73-usb-net-by-mac.link:
+      /usr/lib/systemd/network/99-default.link:
+
+  modprobe-config:
+    contents:
+      /usr/lib/modprobe.d/fbdev-blacklist.conf:
+
+  tmpfiles-config:
+    contents:
+      /usr/lib/tmpfiles.d/static-nodes-permissions.conf:
+
+  sysusers-config:
+    contents:
+      /usr/lib/sysusers.d/debian-udev.conf:
+
+  copyright:
+    contents:
+      /usr/share/doc/udev/copyright:

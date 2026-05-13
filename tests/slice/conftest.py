@@ -27,15 +27,16 @@ RUNS_DIR = TESTS_DIR / ".cache" / "runs"
 class Run:
     case: Case
     model: Model
+    target: str           # which package within the case this Run scores
     run_dir: Path
 
     @property
     def result_path(self) -> Path:
-        return self.run_dir / f"{self.case.package}.yaml"
+        return self.run_dir / f"{self.target}.yaml"
 
     @property
     def expected_path(self) -> Path:
-        return self.run_dir / f"{self.case.package}.expected.yaml"
+        return self.run_dir / f"{self.target}.expected.yaml"
 
     @property
     def metadata(self) -> dict:
@@ -58,8 +59,8 @@ class Run:
 def _discover_runs() -> list[Run]:
     if not RUNS_DIR.exists():
         return []
-    manifest = load_manifest(MANIFEST_PATH)
     cases_by_name = {c.name: c for c in discover_cases(CASES_DIR)}
+    manifest = load_manifest(MANIFEST_PATH)
     models_by_id = {m.id: m for m in manifest.models}
     out: list[Run] = []
     for model_dir in sorted(RUNS_DIR.iterdir()):
@@ -74,7 +75,8 @@ def _discover_runs() -> list[Run]:
             case = cases_by_name.get(case_dir.name)
             if case is None:
                 continue
-            out.append(Run(case=case, model=model, run_dir=case_dir))
+            for tgt in case.effective_targets:
+                out.append(Run(case=case, model=model, target=tgt, run_dir=case_dir))
     return out
 
 
@@ -91,12 +93,14 @@ def run(request) -> Run:
 @pytest.fixture
 def agent_output(run: Run) -> Run:
     if not run.result_path.exists():
-        pytest.skip(f"no result.yaml for {run.case.name}/{run.model.id} -- run `make run`")
+        pytest.skip(
+            f"no result for {run.case.name}/{run.target}/{run.model.id} -- run `make run`"
+        )
     return run
 
 
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
-    """Parametrize over discovered (case, model) runs in .cache/runs/."""
+    """Parametrize over discovered (case, target, model) runs in .cache/runs/."""
     if "run" not in metafunc.fixturenames:
         return
     runs = _discover_runs()
@@ -117,6 +121,6 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     metafunc.parametrize(
         "run",
         runs,
-        ids=[f"{r.case.name}-{r.model.id}" for r in runs],
+        ids=[f"{r.case.name}-{r.target}-{r.model.id}" for r in runs],
         indirect=True,
     )

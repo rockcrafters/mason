@@ -1,4 +1,9 @@
-"""sandbox setup: shallow-clone chisel-releases, copy skills/, nuke target slice."""
+"""sandbox setup: shallow-clone chisel-releases, copy skills/, prep targets.
+
+Targets vary by kind:
+- knockout: each target's slice exists in clone; snapshot as expected_yaml, then delete.
+- denovo: each target's slice must NOT exist in clone; expected_yaml from <case_dir>/<pkg>.silver.yaml.
+"""
 from __future__ import annotations
 
 import hashlib
@@ -7,8 +12,11 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from framework.manifest import Case
+
 __all__ = [
     "Sandbox",
+    "Target",
     "REPO_ROOT",
     "build_sandbox",
     "cr_clone_dir",
@@ -27,11 +35,34 @@ def cr_clone_dir(branch: str) -> Path:
 
 
 @dataclass(frozen=True)
-class Sandbox:
-    root: Path                # agent's cwd
-    slice_path: Path          # path inside root where target slice lives
-    expected_yaml: str        # original yaml content (ground truth)
+class Target:
     package: str
+    slice_path: Path        # path inside sandbox where agent should write
+    expected_yaml: str      # ground truth (golden for knockout, silver for denovo)
+
+
+@dataclass(frozen=True)
+class Sandbox:
+    root: Path
+    targets: tuple[Target, ...]
+    kind: str
+
+    @property
+    def top(self) -> Target:
+        return self.targets[0]
+
+    # legacy single-target accessors -- top target only
+    @property
+    def slice_path(self) -> Path:
+        return self.top.slice_path
+
+    @property
+    def expected_yaml(self) -> str:
+        return self.top.expected_yaml
+
+    @property
+    def package(self) -> str:
+        return self.top.package
 
 
 def _run(cmd: list[str], cwd: Path | None = None) -> None:
@@ -69,8 +100,7 @@ def _short_hash(s: str) -> str:
 
 
 def build_sandbox(
-    package: str,
-    branch: str,
+    case: Case,
     *,
     chisel_clone: Path,
     skills_src: Path,
@@ -79,17 +109,16 @@ def build_sandbox(
 ) -> Sandbox:
     """Materialise sandbox dir at workdir. Returns Sandbox handle.
 
-    - Clean workdir.
-    - Copy chisel-releases checkout (already on correct branch/sha) into workdir.
-    - Read original slices/<pkg>.yaml as expected_yaml.
-    - Delete that file in sandbox.
-    - Copy skills/ + CLAUDE.md so agent loads the slice skill.
+    - Clean workdir, copy chisel-releases working tree (no .git).
+    - Per target in case.effective_targets:
+        - knockout: snapshot slices/<pkg>.yaml -> expected_yaml; delete the file.
+        - denovo: assert slices/<pkg>.yaml absent; load silver -> expected_yaml.
+    - Copy skills/ + project CLAUDE.md so agent auto-loads the skill.
     """
     if workdir.exists():
         shutil.rmtree(workdir)
     workdir.mkdir(parents=True)
 
-    # copy chisel-releases working tree (exclude .git for speed)
     for entry in chisel_clone.iterdir():
         if entry.name == ".git":
             continue
@@ -99,29 +128,39 @@ def build_sandbox(
         else:
             shutil.copy2(entry, dst)
 
-    slice_path = workdir / "slices" / f"{package}.yaml"
-    if not slice_path.exists():
-        raise RuntimeError(
-            f"target slice not found in clone: slices/{package}.yaml on {branch}"
+    targets: list[Target] = []
+    for pkg in case.effective_targets:
+        slice_path = workdir / "slices" / f"{pkg}.yaml"
+        if case.kind == "knockout":
+            if not slice_path.exists():
+                raise RuntimeError(
+                    f"knockout target slice not found in clone: slices/{pkg}.yaml on {case.branch}"
+                )
+            expected_yaml = slice_path.read_text(encoding="utf-8")
+            slice_path.unlink()
+        else:  # denovo
+            if slice_path.exists():
+                raise RuntimeError(
+                    f"denovo target slice already exists upstream -- silver is stale: "
+                    f"slices/{pkg}.yaml on {case.branch}"
+                )
+            silver = case.silver_path(pkg)
+            if silver is None or not silver.exists():
+                raise RuntimeError(
+                    f"denovo case missing silver for {pkg}: expected {silver}"
+                )
+            expected_yaml = silver.read_text(encoding="utf-8")
+        targets.append(
+            Target(package=pkg, slice_path=slice_path, expected_yaml=expected_yaml)
         )
-    expected_yaml = slice_path.read_text(encoding="utf-8")
-    slice_path.unlink()
 
-    # copy skills/
     skills_dst = workdir / "skills"
     if skills_dst.exists():
         shutil.rmtree(skills_dst)
     shutil.copytree(skills_src, skills_dst, symlinks=False)
 
-    # copy project CLAUDE.md (or AGENTS.md target) so agent auto-loads skill
     if project_md_src is not None and project_md_src.exists():
-        # resolve symlink + write as real file at CLAUDE.md
         content = project_md_src.read_text(encoding="utf-8")
         (workdir / "CLAUDE.md").write_text(content, encoding="utf-8")
 
-    return Sandbox(
-        root=workdir,
-        slice_path=slice_path,
-        expected_yaml=expected_yaml,
-        package=package,
-    )
+    return Sandbox(root=workdir, targets=tuple(targets), kind=case.kind)

@@ -1,0 +1,29 @@
+package: ipmitool
+
+essential:
+  - ipmitool_copyright
+
+slices:
+  bins:
+    essential:
+      - ipmitool_data
+      - libc6_libs
+      - libfreeipmi17_libs
+      - libreadline8t64_libs
+      - libssl3t64_libs
+    contents:
+      /usr/bin/ipmitool:
+      /usr/sbin/ipmievd:
+
+  data:
+    contents:
+      /usr/share/ipmitool/oem_ibm_sel_map:
+      /usr/share/misc/enterprise-numbers.txt:
+
+  services:
+    contents:
+      /usr/lib/systemd/system/ipmievd.service:
+
+  copyright:
+    contents:
+      /usr/share/doc/ipmitool/copyright:

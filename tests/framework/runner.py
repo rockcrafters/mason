@@ -22,6 +22,8 @@ import shutil
 import sys
 import time as _time
 
+import re as _re
+
 # ----- logging: colour for tty, plain for files -----
 _COLORS = {
     "DEBUG": "\033[37m",      # grey
@@ -32,10 +34,49 @@ _COLORS = {
 }
 _RESET = "\033[0m"
 
+# per-job colour palette: distinguishable shades of blue / cyan / green,
+# all in roughly the same saturation band as the default cyan (xterm-256).
+# cycled by index so each job gets a stable colour for its log lines.
+_JOB_PALETTE = [
+    27, 33, 39, 45, 51,   # blue -> cyan
+    50, 49, 48, 47, 46,   # cyan -> green
+    44, 38, 75, 79, 80,   # mid blue/teal
+    76, 82, 41, 42, 43,   # greens
+]
+_JOB_COLORS: dict[str, str] = {}
+_JOB_RE = _re.compile(r"\[(j\d+)[^\]]*\]")
+
+_T0_OVERALL = _time.monotonic()
+
+_PAIR_LOCK = threading.Lock()
+_PAIR_DONE = 0
+_PAIR_TOTAL = 0
+
+
+def _pair_progress() -> str:
+    with _PAIR_LOCK:
+        return f"{_PAIR_DONE}/{_PAIR_TOTAL}"
+
+
+def _pair_complete() -> None:
+    global _PAIR_DONE
+    with _PAIR_LOCK:
+        _PAIR_DONE += 1
+
 
 class _ColorFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         msg = super().format(record)
+        # warn / error: keep level colour (signal beats per-job hue).
+        if record.levelno >= logging.WARNING:
+            col = _COLORS.get(record.levelname, "")
+            return f"{col}{msg}{_RESET}" if col else msg
+        m = _JOB_RE.search(msg)
+        if m:
+            col = _JOB_COLORS.get(m.group(1), "")
+            if col:
+                s, e = m.span()
+                return f"{msg[:s]}{col}{msg[s:e]}{_RESET}{msg[e:]}"
         col = _COLORS.get(record.levelname, "")
         return f"{col}{msg}{_RESET}" if col else msg
 
@@ -84,7 +125,8 @@ class _Progress:
         self.tag = f"[{tag}] " if tag else ""
 
     def _stamp(self) -> str:
-        return f"[{_time.monotonic() - self.t0:5.1f}s]"
+        now = _time.monotonic()
+        return f"[{now - self.t0:5.1f}s | {now - _T0_OVERALL:6.1f}s | {_pair_progress()}]"
 
     def emit(self, event: dict) -> None:
         etype = event.get("type")
@@ -181,18 +223,19 @@ def _filter(name: str, want: str | None) -> bool:
     return want is None or want in name
 
 
-def _is_valid_cache(result_path: Path, meta_path: Path) -> bool:
-    """Cache hit only if result file non-empty + parses as yaml + metadata
-    reports status=='ok'. Guards against empty / garbage / failed prior runs
-    being treated as cached."""
-    if not result_path.exists() or result_path.stat().st_size == 0:
-        return False
-    try:
-        import yaml as _yaml
-        if _yaml.safe_load(result_path.read_text(encoding="utf-8")) is None:
+def _is_valid_cache(out_dir: Path, targets: tuple[str, ...], meta_path: Path) -> bool:
+    """Cache hit only if every target file non-empty + parses as yaml + metadata
+    reports status=='ok'. Guards against empty / garbage / failed prior runs."""
+    import yaml as _yaml
+    for pkg in targets:
+        p = out_dir / f"{pkg}.yaml"
+        if not p.exists() or p.stat().st_size == 0:
             return False
-    except Exception:
-        return False
+        try:
+            if _yaml.safe_load(p.read_text(encoding="utf-8")) is None:
+                return False
+        except Exception:
+            return False
     if not meta_path.exists():
         return False
     try:
@@ -212,11 +255,10 @@ def run_pair(
     job_tag: str = "",
 ) -> dict:
     out_dir = _run_dir(model, case)
-    result_path = out_dir / f"{case.package}.yaml"
-    expected_path = out_dir / f"{case.package}.expected.yaml"
     meta_path = out_dir / "metadata.json"
+    targets = case.effective_targets
 
-    if not force and _is_valid_cache(result_path, meta_path):
+    if not force and _is_valid_cache(out_dir, targets, meta_path):
         return {"case": case.name, "model": model.id, "status": "cached"}
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -227,8 +269,7 @@ def run_pair(
     with tempfile.TemporaryDirectory(prefix=f"mason-eval-{case.name}-") as tmp:
         sandbox_root = Path(tmp) / "sandbox"
         sandbox = build_sandbox(
-            package=case.package,
-            branch=case.branch,
+            case=case,
             chisel_clone=chisel_clone,
             skills_src=REPO_ROOT / "skills",
             project_md_src=REPO_ROOT / "AGENTS.md",
@@ -247,8 +288,11 @@ def run_pair(
         # neutral in-namespace path
         plugin_agent_path = "/mason-plugin"
 
-        # snapshot ground truth before agent touches anything
-        expected_path.write_text(sandbox.expected_yaml, encoding="utf-8")
+        # snapshot ground truth(s) before agent touches anything
+        for tgt in sandbox.targets:
+            (out_dir / f"{tgt.package}.expected.yaml").write_text(
+                tgt.expected_yaml, encoding="utf-8"
+            )
         (out_dir / "prompt.txt").write_text(prompt, encoding="utf-8")
 
         stdout_path = out_dir / "stdout.log"
@@ -287,20 +331,25 @@ def run_pair(
             run_log_handler.close()
         duration = time.monotonic() - t0
 
-        # snapshot resulting slice
-        if sandbox.slice_path.exists():
-            result_path.write_text(
-                sandbox.slice_path.read_text(encoding="utf-8"), encoding="utf-8"
-            )
+        # snapshot resulting slice(s) -- per target
+        present = 0
+        for tgt in sandbox.targets:
+            if tgt.slice_path.exists():
+                (out_dir / f"{tgt.package}.yaml").write_text(
+                    tgt.slice_path.read_text(encoding="utf-8"), encoding="utf-8"
+                )
+                present += 1
+        if present == len(sandbox.targets):
             status = "ok"
-        else:
-            # agent failed to produce file
+        elif present == 0:
             status = "missing"
+        else:
+            status = "partial"
 
     meta_path.write_text(
         json.dumps(
             {
-                "case": asdict(case),
+                "case": {k: (str(v) if isinstance(v, Path) else v) for k, v in asdict(case).items()},
                 "model": asdict(model),
                 "prompt_hash": prompt_hash,
                 "skill_hash": skill,
@@ -361,17 +410,22 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             pairs.append((case, model, clone))
 
+    global _PAIR_TOTAL
+    _PAIR_TOTAL = len(pairs)
     results: list[dict] = []
     n = len(pairs)
     width = max(1, len(str(n)))
     jobs = None if args.jobs == -1 else args.jobs
     job_tags = [f"j{i + 1:0{width}d}" for i in range(n)]
+    for i, jt in enumerate(job_tags):
+        _JOB_COLORS[jt] = f"\033[38;5;{_JOB_PALETTE[i % len(_JOB_PALETTE)]}m"
     if jobs == 1 or n <= 1:
         for (case, model, clone), jt in zip(pairs, job_tags):
             log.info("-> [%s] %s x %s", jt, case.name, model.id)
             res = run_pair(case, model, manifest, clone, force=args.force, job_tag=jt)
             res["job"] = jt
             results.append(res)
+            _pair_complete()
             log.info("   [%s] %s", jt, res["status"])
     else:
         log.info("running %d pairs across %s jobs", n, jobs if jobs else "unlimited")
@@ -391,6 +445,7 @@ def main(argv: list[str] | None = None) -> int:
                     res = {"case": case.name, "model": model.id, "status": f"error: {exc}"}
                 res["job"] = jt
                 results.append(res)
+                _pair_complete()
                 log.info("<- [%s] %s x %s  %s", jt, case.name, model.id, res["status"])
 
     log.info("---")

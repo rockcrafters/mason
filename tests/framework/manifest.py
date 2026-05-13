@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
@@ -18,9 +18,21 @@ class Model:
 @dataclass(frozen=True)
 class Case:
     name: str
-    package: str
+    package: str               # top-level pkg; drives /write-slice prompt
     branch: str
     sha: str | None = None
+    kind: str = "knockout"     # "knockout" | "denovo"
+    targets: tuple[str, ...] = ()   # all pkgs scored; () means (package,)
+    case_dir: Path | None = None    # source dir for silver lookup (denovo)
+
+    @property
+    def effective_targets(self) -> tuple[str, ...]:
+        return self.targets or (self.package,)
+
+    def silver_path(self, pkg: str) -> Path | None:
+        if self.case_dir is None:
+            return None
+        return self.case_dir / f"{pkg}.silver.yaml"
 
 
 @dataclass(frozen=True)
@@ -64,12 +76,20 @@ def discover_cases(cases_dir: Path) -> tuple[Case, ...]:
         if not meta.exists():
             continue
         raw = yaml.safe_load(meta.read_text(encoding="utf-8"))
+        kind = raw.get("kind", "knockout")
+        if kind not in ("knockout", "denovo"):
+            raise ValueError(f"{meta}: unknown kind {kind!r}")
+        targets_raw = raw.get("targets") or []
+        targets = tuple(targets_raw)
         out.append(
             Case(
                 name=raw.get("name", child.name),
                 package=raw["package"],
                 branch=raw["branch"],
                 sha=raw.get("sha"),
+                kind=kind,
+                targets=targets,
+                case_dir=child,
             )
         )
     return tuple(out)
