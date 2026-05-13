@@ -1,0 +1,176 @@
+#!/usr/bin/env python3
+"""
+List files and maintainer scripts inside a debian package to aid chisel slice authoring.
+
+Usage: deb-list <package> [arch] [--scripts]
+  package    debian package name (e.g. bash, libssl3)
+  arch       target architecture (default: host arch; fallback amd64)
+             valid values: amd64 arm64 armhf i386 ppc64el riscv64 s390x
+  --scripts  print full bodies of all present maintainer scripts
+
+Default output:
+  - package header (name, version, arch)
+  - Depends: line for wiring essential: entries
+  - non-directory files, lexicographically sorted, each prefixed with a type tag:
+      [x] executable   [l] symlink -> target   [f] regular file
+  - one-line note listing which maintainer scripts are present
+
+Requirements: apt-get, dpkg-deb (standard on Ubuntu/Debian)
+Note: reads the local apt cache -- run `sudo apt-get update` first if a package
+      or version is not found.
+"""
+
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+
+# Only install-time scripts matter for slice authoring; remove scripts are irrelevant.
+MAINTAINER_SCRIPTS = [
+    ("preinst",  "before install"),
+    ("postinst", "after install"),
+]
+
+
+def perms_to_octal(perms):
+    """Convert symbolic permissions string (e.g. -rwxr-xr-x) to octal (e.g. 0755)."""
+    def triplet(t):
+        return (4 if t[0] == "r" else 0) + (2 if t[1] == "w" else 0) + (1 if t[2] not in "-T" else 0)
+    p = perms[1:10]  # skip type char, take 9 permission chars
+    return f"0{triplet(p[0:3])}{triplet(p[3:6])}{triplet(p[6:9])}"
+
+
+def run(cmd, cwd=None, check=True, capture=False):
+    return subprocess.run(cmd, cwd=cwd, check=check, capture_output=capture, text=True)
+
+
+def host_arch():
+    try:
+        return run(["dpkg", "--print-architecture"], capture=True).stdout.strip()
+    except Exception:
+        return "amd64"
+
+
+def download_deb(pkg, arch, workdir):
+    # Try arch-qualified name first so foreign-arch debs work without
+    # enabling the foreign dpkg arch.
+    for name in [f"{pkg}:{arch}", pkg]:
+        result = run(["apt-get", "download", name], cwd=workdir, check=False, capture=True)
+        if result.returncode == 0:
+            debs = list(Path(workdir).glob("*.deb"))
+            if debs:
+                return debs[0]
+    return None
+
+
+def deb_field(deb_path, field):
+    result = run(["dpkg-deb", "-f", str(deb_path), field], capture=True, check=False)
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def deb_contents(deb_path):
+    """
+    Returns list of (path, tag, perms, owner, symlink_target_or_None), lexicographically sorted.
+    Directories are excluded -- chisel creates them implicitly.
+
+    dpkg-deb --contents columns: perms links owner/group size date time path [-> target]
+    tag: 'x' executable  'l' symlink  'f' regular file
+    """
+    result = run(["dpkg-deb", "--contents", str(deb_path)], capture=True)
+    entries = []
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        perms = parts[0]
+        owner = parts[1]  # format: user/group
+        entry_type = perms[0]  # - d l
+
+        if entry_type == "d":
+            continue  # skip directories
+
+        if entry_type == "l" and len(parts) >= 3 and parts[-2] == "->":
+            path = parts[-3].lstrip("./")
+            symlink_target = parts[-1].lstrip("./")
+            tag = "l"
+        else:
+            path = parts[-1].lstrip("./")
+            symlink_target = None
+            tag = "x" if "x" in perms[1:] else "f"
+
+        if not path or path == ".":
+            continue
+
+        entries.append((f"/{path}", tag, perms_to_octal(perms), owner, symlink_target))
+
+    entries.sort(key=lambda e: e[0])
+    return entries
+
+
+def deb_maintainer_scripts(deb_path, workdir):
+    """
+    Extracts the control tarball and returns a dict of script_name -> text
+    for whichever of preinst/postinst/prerm/postrm are present.
+    """
+    ctrl_dir = Path(workdir) / "ctrl"
+    ctrl_dir.mkdir()
+    run(["dpkg-deb", "--control", str(deb_path), str(ctrl_dir)], capture=True)
+
+    scripts = {}
+    for name, _ in MAINTAINER_SCRIPTS:
+        path = ctrl_dir / name
+        if path.exists():
+            scripts[name] = path.read_text()
+    return scripts
+
+
+def main():
+    args = sys.argv[1:]
+    show_scripts = "--scripts" in args
+    args = [a for a in args if a != "--scripts"]
+
+    if not args:
+        print("usage: deb-list <package> [arch] [--scripts]", file=sys.stderr)
+        sys.exit(1)
+
+    pkg = args[0]
+    arch = args[1] if len(args) > 1 else host_arch()
+
+    with tempfile.TemporaryDirectory() as workdir:
+        deb = download_deb(pkg, arch, workdir)
+        if not deb:
+            print(f"error: apt-get download failed for {pkg} (arch {arch})", file=sys.stderr)
+            print("hint:  sudo apt-get update  -- then retry", file=sys.stderr)
+            sys.exit(1)
+
+        version = deb_field(deb, "Version")
+        depends  = deb_field(deb, "Depends")
+
+        print(f"package: {pkg}  version: {version}  arch: {arch}\n")
+
+        if depends:
+            print(f"Depends: {depends}\n")
+
+        print("files (lexicographic):  [x]=executable  [f]=file  [l]=symlink")
+        for path, tag, perms, owner, symlink_target in deb_contents(deb):
+            if tag == "l":
+                print(f"  [l] {perms} {owner}  {path} -> {symlink_target}")
+            else:
+                print(f"  [{tag}] {perms} {owner}  {path}")
+
+        scripts = deb_maintainer_scripts(deb, workdir)
+        if scripts:
+            present = [name for name, _ in MAINTAINER_SCRIPTS if name in scripts]
+            print(f"\nmaintainer scripts present: {', '.join(present)}  (re-run with --scripts to view)")
+
+            if show_scripts:
+                for name, label in MAINTAINER_SCRIPTS:
+                    if name not in scripts:
+                        continue
+                    print(f"\n--- {name} ({label}) ---")
+                    print(scripts[name].rstrip())
+
+
+if __name__ == "__main__":
+    main()
