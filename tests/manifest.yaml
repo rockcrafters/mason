@@ -1,11 +1,8 @@
 # mason eval manifest -- models + run knobs only.
 # cases live under tests/cases/<name>/case.yaml -- discovered on the filesystem.
 chisel_releases:
+  # each case declares its own `branch:` (and optional `sha:` pin) in case.yaml.
   url: https://github.com/canonical/chisel-releases.git
-  # pin a sha for reproducibility -- update deliberately
-  # snapshot tip of ubuntu-24.04 at time of writing; bump as needed
-  sha: HEAD
-  branch: ubuntu-26.04
 
 effort: low
 backend: claude

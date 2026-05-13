@@ -20,13 +20,12 @@ class Case:
     name: str
     package: str
     branch: str
+    sha: str | None = None
 
 
 @dataclass(frozen=True)
 class Manifest:
     chisel_releases_url: str
-    chisel_releases_sha: str
-    chisel_releases_default_branch: str
     models: tuple[Model, ...]
     timeout_seconds: int
     stuck_timeout_seconds: int
@@ -47,8 +46,6 @@ def load_manifest(path: Path) -> Manifest:
     )
     return Manifest(
         chisel_releases_url=cr["url"],
-        chisel_releases_sha=cr["sha"],
-        chisel_releases_default_branch=cr["branch"],
         models=models,
         timeout_seconds=int(raw.get("timeout_seconds", 600)),
         stuck_timeout_seconds=int(raw.get("stuck_timeout_seconds", 300)),
@@ -72,6 +69,7 @@ def discover_cases(cases_dir: Path) -> tuple[Case, ...]:
                 name=raw.get("name", child.name),
                 package=raw["package"],
                 branch=raw["branch"],
+                sha=raw.get("sha"),
             )
         )
     return tuple(out)

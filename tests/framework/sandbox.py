@@ -7,12 +7,23 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-__all__ = ["Sandbox", "REPO_ROOT", "build_sandbox", "ensure_chisel_releases_clone"]
+__all__ = [
+    "Sandbox",
+    "REPO_ROOT",
+    "build_sandbox",
+    "cr_clone_dir",
+    "ensure_chisel_releases_clone",
+]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TESTS_DIR = REPO_ROOT / "tests"
 CACHE_DIR = TESTS_DIR / ".cache"
-CR_CLONE_DIR = CACHE_DIR / "chisel-releases"
+CR_CLONES_ROOT = CACHE_DIR / "chisel-releases"
+
+
+def cr_clone_dir(branch: str) -> Path:
+    """Per-branch clone dir. Cases on different branches stay isolated."""
+    return CR_CLONES_ROOT / branch
 
 
 @dataclass(frozen=True)
@@ -31,24 +42,26 @@ def _run(cmd: list[str], cwd: Path | None = None) -> None:
         )
 
 
-def ensure_chisel_releases_clone(url: str, branch: str, sha: str) -> Path:
-    """Idempotent: clone if missing, fetch + checkout pinned sha."""
-    CR_CLONE_DIR.parent.mkdir(parents=True, exist_ok=True)
-    if not CR_CLONE_DIR.exists():
+def ensure_chisel_releases_clone(url: str, branch: str, sha: str | None = None) -> Path:
+    """Idempotent: per-branch clone dir; clone if missing, fetch + checkout pinned sha
+    (else tip of branch)."""
+    clone_dir = cr_clone_dir(branch)
+    clone_dir.parent.mkdir(parents=True, exist_ok=True)
+    if not clone_dir.exists():
         _run([
             "git", "clone",
             "--filter=blob:none",
             "--branch", branch,
             url,
-            str(CR_CLONE_DIR),
+            str(clone_dir),
         ])
     if sha and sha != "HEAD":
-        _run(["git", "fetch", "--depth=1", "origin", sha], cwd=CR_CLONE_DIR)
-        _run(["git", "checkout", sha], cwd=CR_CLONE_DIR)
+        _run(["git", "fetch", "--depth=1", "origin", sha], cwd=clone_dir)
+        _run(["git", "checkout", sha], cwd=clone_dir)
     else:
-        _run(["git", "fetch", "origin", branch], cwd=CR_CLONE_DIR)
-        _run(["git", "checkout", f"origin/{branch}"], cwd=CR_CLONE_DIR)
-    return CR_CLONE_DIR
+        _run(["git", "fetch", "origin", branch], cwd=clone_dir)
+        _run(["git", "checkout", f"origin/{branch}"], cwd=clone_dir)
+    return clone_dir
 
 
 def _short_hash(s: str) -> str:

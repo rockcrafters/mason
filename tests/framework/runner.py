@@ -315,16 +315,17 @@ def main(argv: list[str] | None = None) -> int:
         print("no models in manifest", file=sys.stderr)
         return 1
 
-    clone = ensure_chisel_releases_clone(
-        url=manifest.chisel_releases_url,
-        branch=manifest.chisel_releases_default_branch,
-        sha=manifest.chisel_releases_sha,
-    )
-
     results: list[dict] = []
     for case in cases:
         if not _filter(case.name, args.case):
             continue
+        # per-case clone (per-branch dir, idempotent). cached across cases on
+        # the same branch within a single run.
+        clone = ensure_chisel_releases_clone(
+            url=manifest.chisel_releases_url,
+            branch=case.branch,
+            sha=case.sha,
+        )
         for model in manifest.models:
             if not _filter(model.id, args.model):
                 continue
