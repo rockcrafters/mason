@@ -220,7 +220,7 @@ Rules:
 
 ## Inspecting a deb package
 
-Use `skills/slice/deb-list <package> [arch]` to inspect a deb before authoring slices. Output covers files, symlinks, declared deps, and maintainer scripts.
+Use `skills/slice/deb-list <package> [arch]` to inspect a deb before authoring slices.
 
 ```
 $ deb-list bash
@@ -237,16 +237,15 @@ files (lexicographic):  [x]=executable  [f]=file  [l]=symlink
   [f] /usr/share/doc/bash/copyright
   ...
 
-maintainer scripts (external commands invoked):
-  postinst (after install): update-alternatives, update-menus
-  prerm (before remove): update-alternatives
-  postrm (after remove): (none detected)
+maintainer scripts present: postinst, prerm, postrm  (re-run with --scripts to view)
 ```
+
+Add `--scripts` to print the full bodies of all present maintainer scripts.
 
 - `Depends:` feeds directly into `essential:` entries -- filter to direct deps only, skip `Recommends:`.
 - `[l] path -> target` means the deb ships that symlink -- use a bare path entry, no explicit `symlink:` needed.
 - `[x]` marks executables (go in `bins`); `[f]` marks regular files.
-- Maintainer scripts list the external commands each script invokes. If `postinst` calls tools like `update-alternatives`, `ldconfig`, or `update-mime-database`, those side-effects do not run in a chisel rootfs -- either drop the dep or write a `mutate:` equivalent.
+- If `--scripts` shows the postinst calling tools like `update-alternatives`, `ldconfig`, or `update-mime-database`, those side-effects do not run in a chisel rootfs -- either drop the dep or write a `mutate:` equivalent.
 - Run once per target arch when multiarch differences are expected (`deb-list libfoo amd64`, then `arm64`, etc.).
 
 Requires `apt-get` + `dpkg-deb` and a populated apt cache (`sudo apt-get update`).
