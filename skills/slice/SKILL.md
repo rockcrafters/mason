@@ -218,6 +218,39 @@ Rules:
 - **Slice rename across releases** (e.g. `bins` -> `scripts`): breaking pr in oldest, then ff prs into newer with `n/a` forward-port marker.
 - **Versioned soname pkgs** (`librocksdb9.11`) deleted when upstream rolls new soname (`librocksdb10`). `removed-slices` ci ignores if old pkg gone from archive.
 
+## Inspecting a deb package
+
+Use `skills/slice/deb-list <package> [arch]` to inspect a deb before authoring slices. Output covers files, symlinks, declared deps, and maintainer scripts.
+
+```
+$ deb-list bash
+package: bash  version: 5.3-2ubuntu1  arch: amd64
+
+Depends: base-files (>= 2.1.12), debianutils (>= 5.6-0.1)
+
+files (lexicographic):  [x]=executable  [f]=file  [l]=symlink
+  [f] /etc/bash.bashrc
+  [f] /etc/skel/.bash_logout
+  ...
+  [x] /usr/bin/bash
+  [l] /usr/bin/rbash -> bash
+  [f] /usr/share/doc/bash/copyright
+  ...
+
+maintainer scripts (external commands invoked):
+  postinst (after install): update-alternatives, update-menus
+  prerm (before remove): update-alternatives
+  postrm (after remove): (none detected)
+```
+
+- `Depends:` feeds directly into `essential:` entries -- filter to direct deps only, skip `Recommends:`.
+- `[l] path -> target` means the deb ships that symlink -- use a bare path entry, no explicit `symlink:` needed.
+- `[x]` marks executables (go in `bins`); `[f]` marks regular files.
+- Maintainer scripts list the external commands each script invokes. If `postinst` calls tools like `update-alternatives`, `ldconfig`, or `update-mime-database`, those side-effects do not run in a chisel rootfs -- either drop the dep or write a `mutate:` equivalent.
+- Run once per target arch when multiarch differences are expected (`deb-list libfoo amd64`, then `arm64`, etc.).
+
+Requires `apt-get` + `dpkg-deb` and a populated apt cache (`sudo apt-get update`).
+
 ## Inspecting repo without full checkout
 
 Prefer `git` + `curl` over `gh` -- more commonly available, no auth needed for public reads.

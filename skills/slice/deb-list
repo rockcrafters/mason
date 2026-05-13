@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+"""
+List files and maintainer scripts inside a debian package to aid chisel slice authoring.
+
+Usage: deb-list <package> [arch]
+  package  debian package name (e.g. bash, libssl3)
+  arch     target architecture (default: host arch; fallback amd64)
+           valid values: amd64 arm64 armhf i386 ppc64el riscv64 s390x
+
+Output:
+  - package header (name, version, arch)
+  - Depends: line for wiring essential: entries
+  - non-directory files, lexicographically sorted, each prefixed with a type tag:
+      [x] executable   [l] symlink -> target   [f] regular file
+  - for each maintainer script present: a list of external commands it invokes,
+    to identify side-effects that need a mutate: equivalent (dpkg scripts do not
+    run in a chisel rootfs)
+
+Requirements: apt-get, dpkg-deb (standard on Ubuntu/Debian)
+Note: reads the local apt cache -- run `sudo apt-get update` first if a package
+      or version is not found.
+"""
+
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+
+# Maintainer scripts run by dpkg around install/remove, in execution order.
+MAINTAINER_SCRIPTS = [
+    ("preinst",  "before install"),
+    ("postinst", "after install"),
+    ("prerm",    "before remove"),
+    ("postrm",   "after remove"),
+]
+
+# Shell keywords and builtins that are never external commands.
+_SHELL_NOISE = {
+    # keywords
+    "if", "then", "else", "elif", "fi", "case", "esac", "for", "while",
+    "until", "do", "done", "in", "select", "function", "time", "coproc",
+    # builtins
+    "echo", "exit", "return", "set", "export", "unset", "readonly", "local",
+    "shift", "test", "true", "false", "printf", "read", "break", "continue",
+    "eval", "exec", "trap", "wait", "source", "cd", "pwd", "umask", "declare",
+    "typeset", "let", "getopts", "hash", "type", "alias", "unalias", "mapfile",
+    # so common they add no signal
+    "mv", "cp", "rm", "mkdir", "chmod", "chown", "cat", "grep", "sed", "awk",
+    "sort", "head", "tail", "cut", "tr", "find", "xargs", "basename", "dirname",
+    "readlink", "ln", "touch", "install", "wc", "env", "sh", "bash",
+}
+
+
+def run(cmd, cwd=None, check=True, capture=False):
+    return subprocess.run(cmd, cwd=cwd, check=check, capture_output=capture, text=True)
+
+
+def host_arch():
+    try:
+        return run(["dpkg", "--print-architecture"], capture=True).stdout.strip()
+    except Exception:
+        return "amd64"
+
+
+def download_deb(pkg, arch, workdir):
+    # Try arch-qualified name first so foreign-arch debs work without
+    # enabling the foreign dpkg arch.
+    for name in [f"{pkg}:{arch}", pkg]:
+        result = run(["apt-get", "download", name], cwd=workdir, check=False, capture=True)
+        if result.returncode == 0:
+            debs = list(Path(workdir).glob("*.deb"))
+            if debs:
+                return debs[0]
+    return None
+
+
+def deb_field(deb_path, field):
+    result = run(["dpkg-deb", "-f", str(deb_path), field], capture=True, check=False)
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def deb_contents(deb_path):
+    """
+    Returns list of (path, tag, symlink_target_or_None), lexicographically sorted.
+    Directories are excluded -- chisel creates them implicitly.
+
+    dpkg-deb --contents columns: perms links owner size date time path [-> target]
+    tag: 'x' executable  'l' symlink  'f' regular file
+    """
+    result = run(["dpkg-deb", "--contents", str(deb_path)], capture=True)
+    entries = []
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        perms = parts[0]
+        entry_type = perms[0]  # - d l
+
+        if entry_type == "d":
+            continue  # skip directories
+
+        if entry_type == "l" and len(parts) >= 3 and parts[-2] == "->":
+            path = parts[-3].lstrip("./")
+            symlink_target = parts[-1].lstrip("./")
+            tag = "l"
+        else:
+            path = parts[-1].lstrip("./")
+            symlink_target = None
+            # executable if any execute bit is set in the permissions string
+            tag = "x" if "x" in perms[1:] else "f"
+
+        if not path or path == ".":
+            continue
+
+        entries.append((f"/{path}", tag, symlink_target))
+
+    entries.sort(key=lambda e: e[0])
+    return entries
+
+
+def extract_commands(script_text):
+    """
+    Heuristically extracts external command names from a shell script.
+    Strips comments, quoted strings, variable assignments, case labels, and
+    locally-defined function names, then finds words at command positions.
+    """
+    # Collect locally-defined function names so we don't report them as external.
+    local_functions = set(re.findall(r'^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\(\)', script_text, re.MULTILINE))
+
+    clean_lines = []
+    for line in script_text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        # Drop case labels: word/glob (may contain hyphens) followed immediately by )
+        if re.match(r'^\s*[A-Za-z0-9_./*|-]+\)', line):
+            continue
+        # Drop variable assignments: WORD=...
+        if re.match(r'^\s*[A-Z_][A-Z0-9_]*=', line):
+            continue
+        # Strip double-quoted strings so words inside them aren't matched.
+        line = re.sub(r'"[^"]*"', '""', line)
+        clean_lines.append(line)
+    text = "\n".join(clean_lines)
+
+    # Match the first word of each statement-like position, including after
+    # flow-control keywords (if CMD, while CMD, elif CMD, until CMD).
+    matches = re.findall(
+        r'(?:^|[;|&(\n])\s*(?:(?:if|elif|while|until)\s+)?([a-zA-Z][a-zA-Z0-9_./-]*)',
+        text,
+        re.MULTILINE,
+    )
+    commands = set()
+    for m in matches:
+        cmd = m.strip().split("/")[-1]  # strip any path prefix
+        if (
+            cmd
+            and cmd not in _SHELL_NOISE
+            and cmd not in local_functions
+            and not cmd.startswith("-")
+            and not cmd.isupper()                          # skip env var names
+            and len(cmd) > 1                               # skip single-letter noise
+            and len(cmd) < 40                              # skip hash strings
+            and not re.search(r'\.[a-z0-9]{1,4}$', cmd)  # skip filenames (foo.gz, bar.so.1)
+        ):
+            commands.add(cmd)
+    return sorted(commands)
+
+
+def deb_maintainer_scripts(deb_path, workdir):
+    """
+    Extracts control tarball and returns dict of script_name -> list_of_commands.
+    """
+    ctrl_dir = Path(workdir) / "ctrl"
+    ctrl_dir.mkdir()
+    run(["dpkg-deb", "--control", str(deb_path), str(ctrl_dir)], capture=True)
+
+    scripts = {}
+    for name, _ in MAINTAINER_SCRIPTS:
+        path = ctrl_dir / name
+        if path.exists():
+            scripts[name] = extract_commands(path.read_text())
+    return scripts
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("usage: deb-list <package> [arch]", file=sys.stderr)
+        sys.exit(1)
+
+    pkg = sys.argv[1]
+    arch = sys.argv[2] if len(sys.argv) > 2 else host_arch()
+
+    with tempfile.TemporaryDirectory() as workdir:
+        deb = download_deb(pkg, arch, workdir)
+        if not deb:
+            print(f"error: apt-get download failed for {pkg} (arch {arch})", file=sys.stderr)
+            print("hint:  sudo apt-get update  -- then retry", file=sys.stderr)
+            sys.exit(1)
+
+        version = deb_field(deb, "Version")
+        depends  = deb_field(deb, "Depends")
+
+        print(f"package: {pkg}  version: {version}  arch: {arch}\n")
+
+        if depends:
+            print(f"Depends: {depends}\n")
+
+        print("files (lexicographic):  [x]=executable  [f]=file  [l]=symlink")
+        for path, tag, symlink_target in deb_contents(deb):
+            if tag == "l":
+                print(f"  [l] {path} -> {symlink_target}")
+            else:
+                print(f"  [{tag}] {path}")
+
+        scripts = deb_maintainer_scripts(deb, workdir)
+        if scripts:
+            print()
+            print("maintainer scripts (external commands invoked):")
+            for name, label in MAINTAINER_SCRIPTS:
+                if name not in scripts:
+                    continue
+                cmds = scripts[name]
+                cmd_list = ", ".join(cmds) if cmds else "(none detected)"
+                print(f"  {name} ({label}): {cmd_list}")
+
+
+if __name__ == "__main__":
+    main()
