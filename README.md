@@ -28,8 +28,8 @@ git clone https://github.com/rockcrafters/mason.git ~/git/mason
 | claude code | `/plugin marketplace add rockcrafters/mason` then `/plugin install mason@mason` |
 | opencode | add `"plugin": ["$MASON/src/plugins/opencode"]` to `~/.config/opencode/opencode.json` |
 | codex | `ln -s "$MASON/skills/slice" ~/.codex/skills/slice` (codex plugins layout still wip; verify path) |
-| copilot cli | in your project root: `ln -s "$MASON/skills/slice/SKILL.md" .github/copilot-instructions.md` (or `@`-include from existing `AGENTS.md`) |
-| gemini cli | in your project root: `ln -s "$MASON/skills/slice/SKILL.md" GEMINI.md` (or `@`-include from existing `GEMINI.md`) |
+| copilot cli | in your project root: `ln -s "$MASON/AGENTS.md" AGENTS.md` (picks up all mason skills; or `@`-include from existing `AGENTS.md`) |
+| gemini cli | in your project root: `ln -s "$MASON/GEMINI.md" GEMINI.md` (picks up all mason skills; or `@`-include from existing `GEMINI.md`) |
 
 ## status
 
