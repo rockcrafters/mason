@@ -12,7 +12,8 @@ Usage: try-cut [--arch ARCH] <pkg>_<slice> [...]
   --arch ARCH   package architecture (passed through to chisel cut)
 
 Runs chisel cut --release <cwd> --root <tmpdir> with the given slices.
-Passes chisel output through unchanged and returns its exit code.
+The temp root is created in the current directory (chisel snap compat)
+and removed on exit. Passes chisel output through unchanged.
 EOF
     exit 1
 }
@@ -50,7 +51,9 @@ if [[ ${#SLICES[@]} -eq 0 ]]; then
     usage
 fi
 
-ROOT="$(mktemp -d)"
+ROOT="$(mktemp -d ./chisel-root.XXXXXX)"
+trap 'rm -rf "$ROOT"' EXIT
+
 ARCH_FLAG=()
 [[ -n "$ARCH" ]] && ARCH_FLAG=(--arch "$ARCH")
 
