@@ -1,5 +1,7 @@
 # mason
 
+![Mason logo](assets/Mason_logo.png)
+
 Agent kit for working on [`canonical/chisel-releases`](https://github.com/canonical/chisel-releases). Packages the tribal knowledge needed to author and review chisel slice definition files (SDFs) so an AI coding agent can pick it up on demand.
 
 ## what's in here
