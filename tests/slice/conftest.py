@@ -39,6 +39,17 @@ class Run:
         return self.run_dir / f"{self.target}.expected.yaml"
 
     @property
+    def task_path(self) -> Path:
+        """spread test the agent wrote for this target, if any."""
+        return self.run_dir / f"{self.target}.task.yaml"
+
+    @property
+    def spread_bundle(self) -> str:
+        """all of the target's spread test files concatenated, or empty."""
+        p = self.run_dir / f"{self.target}.spread.txt"
+        return p.read_text(encoding="utf-8") if p.exists() else ""
+
+    @property
     def metadata(self) -> dict:
         p = self.run_dir / "metadata.json"
         return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}

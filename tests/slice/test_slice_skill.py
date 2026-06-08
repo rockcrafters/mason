@@ -510,3 +510,44 @@ def test_structural_distance(agent_output) -> float:
     union = a | e
     return len(a & e) / len(union) if union else 0.0
 
+
+# directories whose non-glob entries are invokable binaries. used to derive
+# the set the spread tests are expected to exercise (regardless of whether
+# the slice groups them under `bins` or per-binary subslices -- finding #3).
+_BIN_DIRS = ("/usr/bin/", "/usr/sbin/", "/bin/", "/sbin/", "/usr/libexec/")
+
+
+def _declared_binaries(doc: Any) -> set[str]:
+    """basenames of concrete (non-glob, non-dir) executables the SDF ships."""
+    out: set[str] = set()
+    for _, path, _ in _iter_contents(doc):
+        if not any(path.startswith(d) for d in _BIN_DIRS):
+            continue
+        if path.endswith("/") or "*" in path or "?" in path:
+            continue
+        out.add(path.rsplit("/", 1)[-1])
+    return out
+
+
+@scored
+def test_spread_test_present(agent_output) -> float:
+    """finding #1: a slice ships with tests. 1.0 if the target has a non-empty
+    tests/spread/integration/<pkg>/task.yaml."""
+    p = agent_output.task_path
+    return 1.0 if p.exists() and p.stat().st_size > 0 else 0.0
+
+
+@scored
+def test_spread_exercises_binaries(agent_output) -> float:
+    """finding #1 + 'every binary in bins must be exercised'. fraction of
+    declared binaries whose basename appears in the spread test bundle.
+    libraries (no binaries) score 1.0 -- nothing to exercise."""
+    doc = _load_yaml(agent_output.slice_path)
+    bins = _declared_binaries(doc)
+    if not bins:
+        return 1.0
+    bundle = agent_output.spread_bundle
+    if not bundle:
+        return 0.0
+    return sum(1 for b in bins if b in bundle) / len(bins)
+

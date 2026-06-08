@@ -209,8 +209,10 @@ def _build_prompt(case: Case) -> str:
         f"\n"
         f"context: this is an automated eval of the slice skill. cwd is a "
         f"bare snapshot of chisel-releases on `{case.branch}` (no `.git`). "
-        f"no upstream fetches available -- work with what's here. write "
-        f"`slices/{case.package}.yaml` in place; skip pr / commit steps."
+        f"no upstream fetches available -- work with what's here. complete the "
+        f"full write-slice workflow in place -- the slice yaml under `slices/` "
+        f"and the spread tests under `tests/spread/integration/` -- but skip "
+        f"the final pr / commit steps."
     )
 
 
@@ -342,6 +344,32 @@ def run_pair(
                     tgt.slice_path.read_text(encoding="utf-8"), encoding="utf-8"
                 )
                 present += 1
+
+        # snapshot spread tests the agent wrote (finding #1: tests block
+        # commit -- a slice should ship with tests). per target: copy
+        # task.yaml verbatim + bundle the whole test dir into one blob so
+        # scorers can grep for binary invocations without walking a tree.
+        for tgt in sandbox.targets:
+            test_dir = sandbox.root / "tests" / "spread" / "integration" / tgt.package
+            task = test_dir / "task.yaml"
+            if task.exists():
+                (out_dir / f"{tgt.package}.task.yaml").write_text(
+                    task.read_text(encoding="utf-8"), encoding="utf-8"
+                )
+            if test_dir.is_dir():
+                parts: list[str] = []
+                for f in sorted(test_dir.rglob("*")):
+                    if not f.is_file():
+                        continue
+                    try:
+                        body = f.read_text(encoding="utf-8")
+                    except (UnicodeDecodeError, OSError):
+                        continue
+                    parts.append(f"# ===== {f.relative_to(test_dir)} =====\n{body}")
+                if parts:
+                    (out_dir / f"{tgt.package}.spread.txt").write_text(
+                        "\n".join(parts), encoding="utf-8"
+                    )
         if present == len(sandbox.targets):
             status = "ok"
         elif present == 0:
