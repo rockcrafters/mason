@@ -5,7 +5,7 @@ description: >
   Covers dependency-tree-first workflow, package inspection via deb-list,
   slice design, SDF authoring, formatting, and testing. Stops at local
   commits; user opens PR themselves.
-  Use when user says "add slice", "chisel slice", "slice <pkg>",
+  Use when user says "add slice", "chisel slice", "slice pkg",
   or works inside a `canonical/chisel-releases` checkout.
 ---
 
