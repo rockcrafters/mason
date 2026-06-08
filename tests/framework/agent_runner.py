@@ -417,6 +417,15 @@ class BwrapClaudeCli(ClaudeCli):
         # build inner argv but inject our plugin_mounts as `--plugin-dir`
         # entries pointing at the in-namespace paths.
         inner = super().build_command(model, effort, prompt, cwd=cwd)
+        # inner[0] is bare "claude" -- not on the namespace PATH
+        # (/usr/...:/bin only). exec by absolute launcher path, which is
+        # ro-bound into the namespace. else bwrap: execvp claude: ENOENT.
+        launcher = (
+            self._claude_launcher
+            if self._claude_launcher and self._claude_launcher.exists()
+            else self._claude_bin
+        )
+        inner[0] = str(launcher)
         # find the position right before `--disallowedTools` to inject
         # plugin-dir args (any position before the prompt is fine).
         injection_point = inner.index("--disallowedTools")
