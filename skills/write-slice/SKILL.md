@@ -258,9 +258,11 @@ These are **mandatory**. CI and reviewers reject non-conforming SDFs.
 9. **Inline-style** for short options: `/path: {arch: [amd64, arm64]}`.
 10. **Annotate explicit symlinks** with comments: `/usr/bin/foo:  # Symlink to ../lib/foo/foo`.
 
-### Step 8: Test
+### Step 9: Test
 
 Testing is mandatory. Depth depends on what the package provides.
+
+**Testing blocks commit.** Do NOT proceed to Step 10 (commit) without tests landed. A `feat:` slice and its `test:` tests form one series -- both must exist before you stop. If tests aren't feasible yet (e.g. waiting on user clarification), leave the slice uncommitted and stop; do not commit the slice alone.
 
 #### Package classification
 
@@ -322,7 +324,11 @@ execute: |
 
 Run with: `spread lxd:tests/spread/integration/<package>`
 
-### Step 9: Commit
+### Step 10: Commit
+
+**Precondition:** verify `tests/spread/integration/<pkg>/task.yaml` exists and passes (`spread lxd:tests/spread/integration/<pkg>`). If missing or failing, stop -- do not commit a `feat:` slice without working tests.
+
+Commit in two steps (one category per commit): the `feat:` slice first, then the `test:` tests. Both must land before you stop.
 
 ```bash
 git -C <repo> commit -m "feat(<pkg>): add <slice-list> slices"
@@ -508,7 +514,7 @@ slices:
 
 ---
 
-## Step 10: Propose a Docs-Alignment Review
+## Step 11: Propose a Docs-Alignment Review
 
 After the work is fully complete (SDFs written, tests passing, commit made), **propose to the user** that they review the result against the official chisel documentation. The [chisel-docs](https://github.com/canonical/chisel-docs) are the authoritative source of truth on how to write slices.
 
@@ -518,7 +524,7 @@ Present this to the user:
 
 If the user accepts, perform the following checks:
 
-### 10a. Validate against chisel-docs (source of truth)
+### 11a. Validate against chisel-docs (source of truth)
 
 Fetch the current upstream documentation and compare the authored SDFs against it:
 
@@ -542,7 +548,7 @@ Check and report to the user:
 - Are there new SDF fields, content path options, or `mutate:` functions in the docs that could improve the result?
 - Is the `format:` version on the target branch compatible with all features used?
 
-### 10b. Cross-check against existing slices
+### 11b. Cross-check against existing slices
 
 Compare the output against canonical reference SDFs on the target branch:
 
@@ -557,7 +563,7 @@ Check and report:
 - Are naming conventions consistent with existing SDFs?
 - Have contribution rules changed since this skill was last updated?
 
-### 10c. Check tool behaviour (if issues arose)
+### 11c. Check tool behaviour (if issues arose)
 
 If anything behaved unexpectedly during `chisel cut` (a field was ignored, a wildcard didn't match, mutate ran differently than documented):
 
@@ -567,7 +573,7 @@ curl -fsSL https://raw.githubusercontent.com/canonical/chisel/main/internal/setu
 
 The tool's actual behaviour overrides any written convention.
 
-### 10d. Update skill files if needed
+### 11d. Update skill files if needed
 
 If the review found discrepancies between the docs and this skill's guidance, update the relevant file:
 
