@@ -1,5 +1,11 @@
 # mason
 
+![WIP](https://img.shields.io/badge/%E2%9A%A0%EF%B8%8F%20work%20in%20progress%20%20%E2%9A%A0%EF%B8%8F-ffffff)
+[![Ubuntu](https://img.shields.io/badge/Ubuntu-E95420?logo=ubuntu&logoColor=white)](#)
+[![rocks](https://img.shields.io/badge/%F0%9F%AA%A8-rocks-E95420)](https://ubuntu.com/server/docs/explanation/virtualisation/about-rock-images/)
+
+WIP. Layout and naming subject to change.
+
 <p align="center">
   <img src="assets/Mason_logo.png" alt="Mason logo">
 </p>
@@ -9,71 +15,17 @@ Agent kit for working on [`canonical/chisel-releases`](https://github.com/canoni
 ## what's in here
 
 ```
-skills/
-  CHISEL.md                        # shared reference (format, branch model, schema versions, sources of truth)
-  write-slice/
-    SKILL.md                       # 10-step authoring workflow
-    deb-list                       # python script to inspect .deb contents before authoring
-    try-cut                        # bash script to test slices against the current checkout
-  review-slice/
-    SKILL.md                       # review checklist (CI checks, style, deps, rejection reasons)
-src/plugins/opencode/              # opencode slash-command shims
+mason/
+  skills/
+    CHISEL.md                      # shared reference (format, branch model, schema versions, sources of truth)
+    write-slice/
+      SKILL.md                     # 10-step authoring workflow
+      scripts/deb-list             # python script to inspect .deb contents before authoring
+      scripts/try-cut              # bash script to test slices against the current checkout
+    review-slice/
+      SKILL.md                     # review checklist (CI checks, style, deps, rejection reasons)
 .claude-plugin/                    # claude code plugin manifest
-AGENTS.md                          # agent entrypoint -- references all three skill files
 ```
-
-### skills
-
-Each `skills/<name>/SKILL.md` is a self-contained briefing an agent loads on demand.
-
-| skill | purpose |
-|-------|---------|
-| `write-slice` | Author new SDFs: validate target, build dep tree, inspect packages with `deb-list`, design slices, write + format + test + commit. Stops at local commits. After work, proposes a docs-alignment review against [chisel-docs](https://github.com/canonical/chisel-docs). |
-| `review-slice` | Review SDFs: CI checks, dependency validation, naming & formatting rules, forward-port requirements, common rejection reasons. |
-
-`CHISEL.md` is shared reference material both skills depend on: SDF format, `chisel.yaml` schema versions (v1/v2/v3), branch model, canonical slice names, multiarch quirks, sources of truth, and external links.
-
-### `deb-list`
-
-Python helper at `skills/write-slice/deb-list`. Inspects a `.deb` package before authoring slices:
-
-```
-$ deb-list bash
-package: bash  version: 5.3-2ubuntu1  arch: amd64
-
-Depends: base-files (>= 2.1.12), debianutils (>= 5.6-0.1)
-
-files (lexicographic):  [x]=executable  [f]=file  [l]=symlink
-  [f] 0644 root/root  /etc/bash.bashrc
-  [x] 0755 root/root  /usr/bin/bash
-  [l] 0777 root/root  /usr/bin/rbash -> bash
-  [f] 0644 root/root  /usr/share/doc/bash/copyright
-  ...
-
-maintainer scripts present: postinst  (re-run with --scripts to view)
-```
-
-Requires `apt-get` + `dpkg-deb` and a populated apt cache.
-
-### `try-cut`
-
-Bash helper at `skills/write-slice/try-cut`. Runs `chisel cut` from the current chisel-releases checkout into a temp root without managing the directory manually:
-
-```
-try-cut [--arch ARCH] <pkg>_<slice> [...]
-```
-
-Passes chisel's output through unchanged and returns its exit code. Useful for quickly validating a new SDF before committing.
-
-### plugin integrations
-
-| client | how |
-|--------|-----|
-| claude code | `/plugin marketplace add rockcrafters/mason` then `/plugin install mason@mason` |
-| opencode | add `"plugin": ["$MASON/src/plugins/opencode"]` to `~/.config/opencode/opencode.json` |
-| codex | `ln -s "$MASON/skills/write-slice" ~/.codex/skills/write-slice` |
-
-`$MASON` = wherever you cloned this repo.
 
 ## sources of truth
 
@@ -81,6 +33,3 @@ The skills defer to three upstream projects. When in doubt:
 
 **tool behaviour** ([canonical/chisel](https://github.com/canonical/chisel)) > **docs** ([canonical/chisel-docs](https://github.com/canonical/chisel-docs)) > **conventions** ([canonical/chisel-releases](https://github.com/canonical/chisel-releases)) > **this repo**
 
-## status
-
-WIP. Layout and naming subject to change.
