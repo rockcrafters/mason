@@ -72,8 +72,6 @@ Passes chisel's output through unchanged and returns its exit code. Useful for q
 | claude code | `/plugin marketplace add rockcrafters/mason` then `/plugin install mason@mason` |
 | opencode | add `"plugin": ["$MASON/src/plugins/opencode"]` to `~/.config/opencode/opencode.json` |
 | codex | `ln -s "$MASON/skills/write-slice" ~/.codex/skills/write-slice` |
-| copilot cli | `ln -s "$MASON/AGENTS.md" AGENTS.md` in project root |
-| gemini cli | `ln -s "$MASON/GEMINI.md" GEMINI.md` in project root |
 
 `$MASON` = wherever you cloned this repo.
 
