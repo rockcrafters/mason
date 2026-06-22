@@ -7,7 +7,7 @@
 WIP. Layout and naming subject to change.
 
 <p align="center">
-  <img src="assets/Mason_logo.png" alt="Mason logo">
+  <img src="assets/logo.png" alt="Mason logo">
 </p>
 
 Agent kit for working on [`canonical/chisel-releases`](https://github.com/canonical/chisel-releases). Packages the tribal knowledge needed to author and review chisel slice definition files (SDFs) so an AI coding agent can pick it up on demand.
