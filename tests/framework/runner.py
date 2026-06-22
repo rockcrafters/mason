@@ -218,7 +218,7 @@ def _build_prompt(case: Case) -> str:
 
 def _skill_hash() -> str:
     h = hashlib.sha256()
-    for p in sorted((REPO_ROOT / "skills").rglob("*")):
+    for p in sorted((REPO_ROOT / "mason" / "skills").rglob("*")):
         if p.is_file():
             h.update(p.read_bytes())
     return h.hexdigest()[:16]
@@ -276,8 +276,8 @@ def run_pair(
         sandbox = build_sandbox(
             case=case,
             chisel_clone=chisel_clone,
-            skills_src=REPO_ROOT / "skills",
-            project_md_src=REPO_ROOT / "AGENTS.md",
+            skills_src=REPO_ROOT / "mason" / "skills",
+            project_md_src=REPO_ROOT / "mason" / "AGENTS.md",
             workdir=sandbox_root,
         )
 
@@ -287,7 +287,7 @@ def run_pair(
         plugin_host = Path(tmp) / "mason-plugin"
         plugin_host.mkdir()
         for sub in (".claude-plugin", "skills"):
-            src = REPO_ROOT / sub
+            src = REPO_ROOT / "mason" / sub
             if src.exists():
                 shutil.copytree(src, plugin_host / sub)
         # neutral in-namespace path

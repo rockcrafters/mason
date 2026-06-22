@@ -10,7 +10,7 @@
     {
       "name": "mason",
       "description": "Skills + helpers for authoring chisel slice definition files (sdfs) against canonical/chisel-releases.",
-      "source": "./",
+      "source": "./mason",
       "category": "development"
     }
   ]
