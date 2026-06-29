@@ -16,20 +16,19 @@ Agent kit for working on [`canonical/chisel-releases`](https://github.com/canoni
 
 ```
 mason/
-  skills/
-    CHISEL.md                      # shared reference (format, branch model, schema versions, sources of truth)
-    write-slice/
-      SKILL.md                     # 10-step authoring workflow
-      scripts/deb-list             # python script to inspect .deb contents before authoring
-      scripts/try-cut              # bash script to test slices against the current checkout
-    review-slice/
-      SKILL.md                     # review checklist (CI checks, style, deps, rejection reasons)
-.claude-plugin/                    # claude code plugin manifest
+  CHISEL.md                        # shared reference (format, branch model, schema versions, sources of truth)
+  agents/
+    write-slice.md                 # agent: 10-step authoring workflow (author + test + commit)
+    review-slice.md                # agent: review checklist (CI checks, style, deps, rejection reasons)
+  scripts/
+    deb-list                       # python script to inspect .deb contents before authoring
+    try-cut                        # bash script to test slices against the current checkout
+  .claude-plugin/                  # claude code plugin manifest
 ```
 
 ## sources of truth
 
-The skills defer to three upstream projects. When in doubt:
+The agents defer to three upstream projects. When in doubt:
 
 **tool behaviour** ([canonical/chisel](https://github.com/canonical/chisel)) > **docs** ([canonical/chisel-docs](https://github.com/canonical/chisel-docs)) > **conventions** ([canonical/chisel-releases](https://github.com/canonical/chisel-releases)) > **this repo**
 
