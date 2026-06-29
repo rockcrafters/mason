@@ -1,0 +1,26 @@
+{
+  "name": "mason",
+  "version": "0.1.0",
+  "description": "Cross-agent skill installer for authoring and reviewing chisel slice definition files (SDFs).",
+  "license": "MIT",
+  "type": "commonjs",
+  "bin": {
+    "mason": "scripts/cli.js"
+  },
+  "files": [
+    "scripts/cli.js",
+    "mason",
+    "README.md"
+  ],
+  "keywords": [
+    "chisel",
+    "skill",
+    "claude",
+    "pi",
+    "opencode",
+    "copilot"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}
