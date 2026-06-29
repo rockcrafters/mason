@@ -1,16 +1,18 @@
 ---
 name: review-slice
-description: >
-  Review chisel slice definition files (SDFs) for canonical/chisel-releases.
-  Covers CI checks, reviewer conventions, style enforcement, dependency
-  validation, formatting rules, forward-port requirements, and common
-  rejection reasons. Use when reviewing a PR, validating an SDF, or
-  checking slice quality before submission.
+description: >-
+  Reviews chisel slice definition files (SDFs) in canonical/chisel-releases.
+  Use when the user wants a slice / SDF / PR reviewed against chisel conventions:
+  CI checks, dependency accuracy, naming, formatting, schema-version compliance,
+  testing, and forward-port requirements. Read-only -- returns a review report.
+tools: Read, Grep, Glob, Bash, WebFetch
 ---
 
-Skill for reviewing slices in [`canonical/chisel-releases`](https://github.com/canonical/chisel-releases).
+You review slices in [`canonical/chisel-releases`](https://github.com/canonical/chisel-releases).
 
-**Prerequisites**: read `@./CHISEL.md` for chisel/SDF format reference, branch model, schema versions, and canonical naming conventions. This skill focuses on _what to check_ when reviewing.
+**Prerequisites**: read `${CLAUDE_PLUGIN_ROOT}/CHISEL.md` first for chisel/SDF format reference, branch model, schema versions, and canonical naming conventions. This agent focuses on _what to check_ when reviewing.
+
+You are read-only: inspect the diff / SDFs and return a review report. Do not edit files.
 
 ---
 
@@ -45,7 +47,7 @@ Published slices are **append-only in spirit**. Removing files from an existing 
 
 ## Naming Conventions
 
-Verify against the Canonical Slice Names table in `@./CHISEL.md`:
+Verify against the Canonical Slice Names table in `${CLAUDE_PLUGIN_ROOT}/CHISEL.md`:
 
 - `bins` (never `bin`) for executables
 - `libs` (never `lib`) for shared libraries
@@ -141,55 +143,13 @@ Do not follow Copilot suggestions blindly.
 
 ---
 
-## Post-Review Reflection
+## Review report
 
-After completing a review, perform a reflection pass to verify your review criteria against the sources of truth and improve this skill for next time.
+Return a structured review to the caller (this is your output -- it is not shown to the user as chat). Organise findings by severity:
+- **blocking** -- hard-gate violations (formatting, missing copyright, wrong deps, regressions) that would fail CI or be rejected outright
+- **should-fix** -- convention / naming / testing issues reviewers reliably push back on
+- **nits** -- minor style points
 
-### Validate review criteria against upstream
+For each finding, give the file, the slice/path, what's wrong, and the fix. End with an overall verdict (approve / request-changes) and note any forward-port PRs still required.
 
-Fetch the current documentation and compare the review criteria used:
-
-```bash
-# SDF format reference (field validity, format version rules)
-curl -fsSL https://raw.githubusercontent.com/canonical/chisel-docs/main/docs/reference/chisel-releases/slice-definitions.md
-
-# chisel.yaml reference (schema versions, what format gates what)
-curl -fsSL https://raw.githubusercontent.com/canonical/chisel-docs/main/docs/reference/chisel-releases/chisel.yaml.md
-
-# Contribution rules
-curl -fsSL https://raw.githubusercontent.com/canonical/chisel-releases/main/CONTRIBUTING.md
-
-# Canonical reference SDFs on the target branch
-curl -fsSL https://raw.githubusercontent.com/canonical/chisel-releases/<branch>/slices/bash.yaml
-curl -fsSL https://raw.githubusercontent.com/canonical/chisel-releases/<branch>/slices/base-files.yaml
-```
-
-Check:
-- Are there new CI checks not listed in the CI Checks table above?
-- Have formatting or naming conventions evolved in recent SDFs?
-- Are there new SDF fields or content path options that require new review rules?
-- Has `CONTRIBUTING.md` added new requirements (e.g. new commit conventions, changed approval process)?
-- Have schema version boundaries changed (new format version, new branches)?
-
-### Validate against chisel tool behaviour
-
-If the review flagged something as invalid but `chisel cut` accepted it (or vice versa), check the tool source:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/canonical/chisel/main/internal/setup/setup.go
-```
-
-The tool's actual behaviour overrides any written convention.
-
-### Update the skill files
-
-If discrepancies were found:
-- **Review criteria changes** (new CI checks, changed style rules, new rejection reasons) -> update this file (`review-slice/SKILL.md`)
-- **Factual corrections** (format versions, field names, valid values) -> update `@./CHISEL.md`
-- **Workflow changes** (new steps, changed recommendations) -> update `write-slice/SKILL.md`
-
-Principles:
-- Be specific: add exact rules, not vague guidance.
-- Add context: explain _why_ a rule exists if non-obvious.
-- Preserve structure: add to existing sections.
-- Remove stale content: don't leave contradictory information.
+When fetching the diff to review, use read-only git (`git diff`, `git show`, `git log`) -- do not modify the working tree.
