@@ -1,10 +1,20 @@
 # mason
 
-agent kit for working on [`canonical/chisel-releases`](https://github.com/canonical/chisel-releases).
+agent kit for chisel / rocks work. a cross-agent skill bundle, portable across claude code, pi, opencode, copilot, and codex.
 
-provides two agents:
+each capability area is its own skill under `mason/skills/`. today there is one:
+
+## chisel-releases
+
+working on [`canonical/chisel-releases`](https://github.com/canonical/chisel-releases). command-per-file; commands:
 
 - **`write-slice`** -- authors + tests + commits chisel slice definition files (SDFs). does not open PRs.
 - **`review-slice`** -- read-only review of SDFs against chisel conventions, CI checks, and forward-port rules.
 
-both read `./CHISEL.md` (shared reference: format, branch model, schema versions, sources of truth) and use the helpers in `./scripts/` (`deb-list`, `try-cut`).
+@./mason/skills/chisel-releases/SKILL.md
+
+self-contained under `./mason/skills/chisel-releases/`: `commands/`, shared reference `shared/CHISEL.md`, helpers `scripts/` (`deb-list`, `try-cut`), command index `schemas/commands.manifest.yaml`. paths inside command files are relative to `${MASON_ROOT}` (the skill's own directory).
+
+## install
+
+`npx github:rockcrafters/mason install` copies all skills into the target agent's discovery dirs (see README). adding a capability = a new skill dir under `mason/skills/`.

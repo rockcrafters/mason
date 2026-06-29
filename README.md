@@ -12,23 +12,58 @@ WIP. Layout and naming subject to change.
 
 Agent kit for working on [`canonical/chisel-releases`](https://github.com/canonical/chisel-releases). Packages the tribal knowledge needed to author and review chisel slice definition files (SDFs) so an AI coding agent can pick it up on demand.
 
+## install
+
+Install the skills into another repo for your agent with `npx`, no clone or npm publish needed:
+
+```
+npx github:rockcrafters/mason install --agents claude
+```
+
+```
+--agents <list>   comma-separated: claude, pi, copilot, opencode, codex (default: auto-detect)
+--target <dir>    install into <dir> (default: git root, else cwd)
+--dry-run         show what would change, write nothing
+--force           overwrite files that differ from the skill source
+--help            show this help
+```
+
+The installer copies each self-contained skill tree into the agent's skill-discovery directory
+(`.claude/skills/<skill>`, `.pi/skills/<skill>`, `.github/skills/<skill>`, `.opencode/skills/<skill>`, `.codex/skills/<skill>`);
+opencode additionally gets a generated `.opencode/command/<skill>.json`. Re-running skips up-to-date
+files and leaves locally-modified ones alone unless `--force` is set.
+
+Claude code users can alternatively add it as a plugin via the marketplace (`.claude-plugin/`).
+
 ## what's in here
+
+`mason` is an umbrella kit for chisel / rocks work. each capability area is one self-contained skill
+under `mason/skills/`; the installer copies each per agent (no committed per-agent adapters). today
+there is one skill, `chisel-releases`.
 
 ```
 mason/
-  CHISEL.md                        # shared reference (format, branch model, schema versions, sources of truth)
-  agents/
-    write-slice.md                 # agent: 10-step authoring workflow (author + test + commit)
-    review-slice.md                # agent: review checklist (CI checks, style, deps, rejection reasons)
-  scripts/
-    deb-list                       # python script to inspect .deb contents before authoring
-    try-cut                        # bash script to test slices against the current checkout
+  skills/
+    chisel-releases/               # a skill -- self-contained, copied verbatim on install
+      SKILL.md                     # skill entry + command dispatch + ${MASON_ROOT} convention
+      commands/
+        write-slice.md             # author + test + commit (10-step authoring workflow)
+        review-slice.md            # review checklist (CI checks, style, deps, rejection reasons)
+      shared/CHISEL.md             # shared reference (format, branch model, schema versions, sources of truth)
+      scripts/
+        deb-list                   # python script to inspect .deb contents before authoring
+        try-cut                    # bash script to test slices against the current checkout
+      schemas/commands.manifest.yaml  # command index (command -> file)
   .claude-plugin/                  # claude code plugin manifest
+scripts/cli.js                     # the npx installer (installs every skill under mason/skills/)
+package.json                       # bin: mason -> scripts/cli.js
 ```
+
+Adding a capability = a new skill directory under `mason/skills/`; the installer picks it up automatically.
 
 ## sources of truth
 
-The agents defer to three upstream projects. When in doubt:
+The skill defers to three upstream projects. When in doubt:
 
 **tool behaviour** ([canonical/chisel](https://github.com/canonical/chisel)) > **docs** ([canonical/chisel-docs](https://github.com/canonical/chisel-docs)) > **conventions** ([canonical/chisel-releases](https://github.com/canonical/chisel-releases)) > **this repo**
 
