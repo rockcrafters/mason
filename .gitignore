@@ -7,3 +7,6 @@
 
 node_modules/
 .DS_Store
+
+# pats run artifacts
+/tests/.pats/
