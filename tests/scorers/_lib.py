@@ -27,10 +27,10 @@ from typing import Any, Callable
 import yaml
 
 __all__ = [
-    "OUT", "TASK", "NA", "emit", "avg", "produced", "expected", "load",
-    "branch", "fmt", "iter_contents", "iter_bodies", "mutate_map",
+    "OUT", "TASK", "NA", "emit", "avg", "produced", "expected",
+    "fmt", "iter_contents", "iter_bodies", "mutate_map",
     "mutate_paths", "content_paths", "declared_binaries", "path_penalty",
-    "targets", "fmt_compat", "CANONICAL", "BIN_DIRS",
+    "targets", "fmt_compat", "CANONICAL",
 ]
 
 OUT = Path(os.environ["PATS_OUTPUT_DIR"])
