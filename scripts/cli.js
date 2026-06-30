@@ -44,7 +44,8 @@ options:
   --target <dir>    install into <dir> (default: git root, else cwd)
   --dry-run         show what would change, write nothing
   --force           overwrite files that differ from the skill source
-  --help            show this help
+  --quiet, -q       suppress per-file logs (warnings still print)
+  --help, -h        show this help
 
 examples:
   npx github:rockcrafters/mason install --agents claude
@@ -193,6 +194,7 @@ function main() {
         target: { type: 'string' },
         'dry-run': { type: 'boolean' },
         force: { type: 'boolean' },
+        quiet: { type: 'boolean', short: 'q' },
         help: { type: 'boolean', short: 'h' },
       },
     }));
@@ -212,11 +214,12 @@ function main() {
     agents: (values.agents || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean).filter((a) => SUPPORTED.includes(a)),
     dryRun: Boolean(values['dry-run']),
     force: Boolean(values.force),
+    quiet: Boolean(values.quiet),
   };
 
   try {
     const { logs, warns } = install(opts);
-    for (const l of logs) process.stdout.write(`${l}\n`);
+    if (!opts.quiet) for (const l of logs) process.stdout.write(`${l}\n`);
     for (const w of warns) process.stderr.write(`warning: ${w}\n`);
   } catch (e) {
     process.stderr.write(`install failed: ${e.message}\n`);
