@@ -25,12 +25,13 @@ npx github:rockcrafters/mason install --agents claude
 --target <dir>    install into <dir> (default: git root, else cwd)
 --dry-run         show what would change, write nothing
 --force           overwrite files that differ from the skill source
---help            show this help
+--quiet, -q       suppress per-file logs (warnings still print)
+--help, -h        show this help
 ```
 
 The installer copies each self-contained skill tree into the agent's skill-discovery directory
 (`.claude/skills/<skill>`, `.pi/skills/<skill>`, `.github/skills/<skill>`, `.opencode/skills/<skill>`, `.codex/skills/<skill>`);
-opencode additionally gets a generated `.opencode/command/<skill>.json`. Re-running skips up-to-date
+opencode additionally gets a generated `.opencode/command/<skill>.md`. Re-running skips up-to-date
 files and leaves locally-modified ones alone unless `--force` is set.
 
 Claude code users can alternatively add it as a plugin via the marketplace (`.claude-plugin/`).
@@ -51,7 +52,8 @@ mason/
         review-slice.md            # review checklist (CI checks, style, deps, rejection reasons)
       shared/CHISEL.md             # shared reference (format, branch model, schema versions, sources of truth)
       scripts/
-        deb-list                   # python script to inspect .deb contents before authoring
+        orientation                # deterministic orientation: cwd, skill dir, target release + format
+        deb-list.py                # python script to inspect .deb contents before authoring
         try-cut                    # bash script to test slices against the current checkout
       schemas/commands.manifest.yaml  # command index (command -> file)
   .claude-plugin/                  # claude code plugin manifest

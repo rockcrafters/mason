@@ -10,6 +10,7 @@
   "files": [
     "scripts/cli.js",
     "mason",
+    ".claude-plugin",
     "README.md"
   ],
   "keywords": [
