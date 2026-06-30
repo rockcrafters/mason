@@ -39,7 +39,7 @@ Before any command, read `${MASON_ROOT}/shared/CHISEL.md`.
 - `/chisel-releases write-slice <pkg>` (the first arg names the command), or
 - plain language: "write a slice for `<pkg>`", "review `slices/foo.yaml`".
 
-dispatch: take the first token of the args as the command name; if it matches a command below, load that file and treat the rest as its input. no match (or no args) -> ask which command, or infer from the request.
+dispatch: take the first token of the args as the command name; if it matches a command below, load that file and treat the rest as its input. on no match, or no args at all, print the numbered list below and wait for the user's reply before loading anything -- never guess.
 
-- `write-slice` -> `commands/write-slice.md` -- author + test + commit SDFs. does not open PRs.
-- `review-slice` -> `commands/review-slice.md` -- read-only review of SDFs.
+1. `write-slice` -> `commands/write-slice.md` -- author + test + commit SDFs. does not open PRs.
+2. `review-slice` -> `commands/review-slice.md` -- read-only review of SDFs.
