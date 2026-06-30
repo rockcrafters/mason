@@ -19,6 +19,24 @@ _clone() {
     printf '%s\n' "$BRANCH" >"$PATS_OUTPUT_DIR/${PATS_TASK_ID}.branch"
 }
 
+# _reinit_git: rebuild git history so HEAD no longer carries the removed target
+# slice -- otherwise the agent recovers the answer with `git show HEAD:slices/...`
+# and the case measures git recall, not authoring. one fresh commit on $BRANCH of
+# the current tree (target slice + its spread already deleted by the caller).
+# NOTE: nukes history wholesale; fine for an eval sandbox. a history-preserving
+# strip (filter-repo) would be the upgrade if real history ever matters here.
+_reinit_git() {
+    rm -rf .git
+    # core.hooksPath=/dev/null: the host's global git hooks (ascii/whitespace/todo
+    # gates) would reject upstream chisel-releases' own spread tests. this is a
+    # sandbox snapshot of upstream, not our code, so bypass them.
+    git init --quiet -b "$BRANCH"
+    git -c core.hooksPath=/dev/null -c user.name=pats -c user.email=pats@local \
+        add -A
+    git -c core.hooksPath=/dev/null -c commit.gpgsign=false -c user.name=pats -c user.email=pats@local \
+        commit --quiet -m "chisel-releases base (target slice removed)"
+}
+
 # _install: install the skill so claude auto-loads it (-> .claude/skills/).
 _install() {
     node "$_repo_root/scripts/cli.js" install --agents claude --target "$PATS_WORKDIR" --force --quiet
@@ -32,6 +50,7 @@ prepare_knockout() {
     cp "slices/${pkg}.yaml" "$PATS_OUTPUT_DIR/${pkg}.expected.yaml"
     rm "slices/${pkg}.yaml"
     rm -rf "tests/spread/integration/${pkg}"
+    _reinit_git
     _install
 }
 
@@ -46,5 +65,6 @@ prepare_denovo() {
         rm -rf "tests/spread/integration/${t}"
     done
     rm -rf "tests/spread/integration/${case_id}"
+    _reinit_git
     _install
 }
