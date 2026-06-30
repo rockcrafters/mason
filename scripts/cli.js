@@ -52,24 +52,6 @@ examples:
   npx github:rockcrafters/mason install --dry-run
 `;
 
-function parseManifestCommands(text) {
-  // minimal: collect (name, file basename) pairs under the commands: section.
-  // section boundaries are top-level (unindented) keys; entries are indented.
-  const out = [];
-  let inCommands = false;
-  let cur = null;
-  for (const raw of text.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line || line.startsWith('#')) continue;
-    const topLevel = raw === raw.trimStart(); // no leading indent
-    if (topLevel) { inCommands = line === 'commands:'; continue; }
-    if (!inCommands) continue;
-    if (line.startsWith('- name:')) { cur = { name: line.replace('- name:', '').trim() }; out.push(cur); }
-    else if (cur && line.startsWith('file:')) { cur.file = path.basename(line.split(':').slice(1).join(':').trim()); }
-  }
-  return out.filter((c) => c.name && c.file);
-}
-
 function gitRoot(dir) {
   try {
     return execSync('git rev-parse --show-toplevel', { cwd: dir, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null;
@@ -160,13 +142,13 @@ function install(opts) {
       const src = path.join(SKILLS_ROOT, skill);
       copyTree(src, path.join(opts.target, SKILL_BASE[agent], skill), opts, logs, warns);
       if (agent === 'opencode') {
-        // single dispatcher so `/chisel-releases <subcmd>` works like in claude
+        // single dispatcher so `/<skill> <subcmd>` works like in claude
         const dispatcher = Buffer.from(
           `---
-description: chisel-releases skill (write-slice, review-slice)
+description: ${skill} skill
 ---
 
-Use the chisel-releases skill. Sub-command: $ARGUMENTS
+Use the ${skill} skill. Sub-command: $ARGUMENTS
 `);
         placeFile(dispatcher, path.join(opts.target, '.opencode/command', `${skill}.md`), opts, logs, warns);
       }
