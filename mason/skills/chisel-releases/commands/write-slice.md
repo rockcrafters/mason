@@ -15,7 +15,7 @@ You author slices against [`canonical/chisel-releases`](https://github.com/canon
 
 **Existing slices are append-only.** Only modify a published slice if strictly necessary (e.g. fixing a bug, adding a missing dependency, or accommodating an upstream packaging change). Never reorganise, rename, or remove paths from existing slices without a concrete reason -- downstream consumers depend on the current layout. When in doubt, create a new slice rather than changing an existing one.
 
-**Prerequisites**: read `${MASON_ROOT}/shared/CHISEL.md` first for chisel/SDF format reference, branch model, schema versions, and canonical naming conventions. This agent focuses on the _workflow_ of writing slices.
+**Prerequisites**: run `${MASON_ROOT}/scripts/orientation <package>` first -- it reports your working dir, the skill dir, and the target release + manifest format (from `chisel.yaml`) deterministically. Then read `${MASON_ROOT}/shared/CHISEL.md` for chisel/SDF format reference, branch model, schema versions, and canonical naming conventions. This command focuses on the _workflow_ of writing slices.
 
 When this prompt and the repo disagree, trust the repo. Read `slices/bash.yaml` or `slices/base-files.yaml` on the target branch as canonical reference.
 

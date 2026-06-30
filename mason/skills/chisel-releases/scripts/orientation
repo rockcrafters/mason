@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# orientation: deterministic orientation for the slice-authoring agent -- run
+# FIRST, every time. prints where you are, where the skill's read-only files are,
+# and the target release + manifest format parsed from ./chisel.yaml. work from
+# this, not from guesses.
+#
+# usage: orientation [<package>]
+set -euo pipefail
+
+mason_root="$(cd "$(dirname "$0")/.." && pwd)"
+echo "working dir (chisel-releases checkout): $(pwd)"
+echo "skill dir (MASON_ROOT, read-only):      $mason_root"
+echo "  reference: $mason_root/shared/CHISEL.md"
+echo "  helpers:   $mason_root/scripts/deb-list.py , $mason_root/scripts/try-cut"
+
+if [ ! -f chisel.yaml ]; then
+    echo "release: UNKNOWN -- no ./chisel.yaml here; cd into a chisel-releases checkout first"
+    exit 0
+fi
+
+# minimal parse (no pyyaml): top-level format, then the first ubuntu archive.
+branch="$(git branch --show-current 2>/dev/null || true)"
+fmt="$(sed -n 's/^format:[[:space:]]*//p' chisel.yaml | head -n1)"
+ver="$(sed -n 's/^[[:space:]]\{1,\}version:[[:space:]]*//p' chisel.yaml | head -n1)"
+suites="$(sed -n 's/.*suites:[[:space:]]*//p' chisel.yaml | head -n1)"
+comps="$(sed -n 's/.*components:[[:space:]]*//p' chisel.yaml | head -n1)"
+
+echo "branch:          ${branch:-?}"
+echo "ubuntu version:  ${ver:-?}"
+echo "manifest format: ${fmt:-?}   (gates SDF features -- see CHISEL.md schema-versions table)"
+echo "suites:          ${suites:-?}"
+echo "components:      ${comps:-?}"
+echo "existing slices: $(ls slices/ 2>/dev/null | wc -l | tr -d ' ') in ./slices/"
+
+if [ "${1:-}" ]; then
+    pkg="$1"
+    echo "target: $pkg  ->  write to ./slices/${pkg}.yaml"
+    [ -f "slices/${pkg}.yaml" ] && echo "  note: ./slices/${pkg}.yaml already exists"
+fi
