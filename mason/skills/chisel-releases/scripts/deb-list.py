@@ -2,7 +2,7 @@
 """
 List files and maintainer scripts inside a debian package to aid chisel slice authoring.
 
-Usage: deb-list <package> [arch] [--scripts]
+Usage: deb-list.py <package> [arch] [--scripts]
   package    debian package name (e.g. bash, libssl3)
   arch       target architecture (default: host arch; fallback amd64)
              valid values: amd64 arm64 armhf i386 ppc64el riscv64 s390x
@@ -15,14 +15,20 @@ Default output:
       [x] executable   [l] symlink -> target   [f] regular file
   - one-line note listing which maintainer scripts are present
 
-Requirements: apt-get, dpkg-deb (standard on Ubuntu/Debian)
-Note: reads the local apt cache -- run `sudo apt-get update` first if a package
-      or version is not found.
+Requirements: dpkg-deb, python3, and network access to the ubuntu mirror
+(archive.ubuntu.com / ports.ubuntu.com). No sudo, no apt, no populated apt
+cache: the .deb is fetched straight from the mirror's Packages index.
+Note: the release suite is read from ./chisel.yaml -- run from a chisel-releases
+      checkout (or a dir whose chisel.yaml names the suite).
 """
 
+import gzip
+import io
+import re
 import subprocess
 import sys
 import tempfile
+import urllib.request
 from pathlib import Path
 
 
@@ -52,15 +58,82 @@ def host_arch():
         return "amd64"
 
 
-def download_deb(pkg, arch, workdir):
-    # Try arch-qualified name first so foreign-arch debs work without
-    # enabling the foreign dpkg arch.
-    for name in [f"{pkg}:{arch}", pkg]:
-        result = run(["apt-get", "download", name], cwd=workdir, check=False, capture=True)
-        if result.returncode == 0:
-            debs = list(Path(workdir).glob("*.deb"))
-            if debs:
-                return debs[0]
+# Ubuntu mirrors 403 python-urllib's default UA; apt's UA is always accepted.
+_UA = "Debian APT-HTTP/1.3"
+_COMPONENTS = ["main", "universe", "restricted", "multiverse"]
+
+
+def arch_base_url(arch):
+    # amd64/i386 live on archive.ubuntu.com; every other port on ports.ubuntu.com.
+    if arch in ("amd64", "i386"):
+        return "http://archive.ubuntu.com/ubuntu"
+    return "http://ports.ubuntu.com/ubuntu-ports"
+
+
+def read_suite():
+    """Base release codename from ./chisel.yaml (archives.ubuntu.suites[0]).
+
+    Minimal parse (no pyyaml): scan for the first token under `suites:` in either
+    inline (`suites: [noble, ...]`) or block (`suites:\\n  - noble`) form, then
+    strip any pocket suffix so we get the base suite (we add -updates/-security).
+    """
+    try:
+        text = Path("chisel.yaml").read_text()
+    except OSError:
+        return None
+    m = re.search(r"suites:\s*\[\s*([A-Za-z0-9.-]+)", text)         # inline list
+    if not m:
+        m = re.search(r"suites:\s*\n\s*-\s*([A-Za-z0-9.-]+)", text)  # block list
+    if not m:
+        return None
+    return re.sub(r"-(updates|security|backports|proposed)$", "", m.group(1))
+
+
+def _fetch(url):
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": _UA})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return resp.read()
+    except Exception:
+        return None
+
+
+def _filename_from_packages(data, pkg):
+    """Find pkg's `Filename:` (pool path) in a gzipped Packages index blob."""
+    try:
+        text = gzip.GzipFile(fileobj=io.BytesIO(data)).read().decode("utf-8", "replace")
+    except Exception:
+        return None
+    cur = {}
+    for line in text.splitlines():
+        if not line:
+            if cur.get("Package") == pkg:
+                return cur.get("Filename")
+            cur = {}
+        elif ":" in line and not line.startswith(" "):
+            k, _, v = line.partition(":")
+            cur[k] = v.strip()
+    return cur.get("Filename") if cur.get("Package") == pkg else None
+
+
+def download_deb(pkg, arch, suite, workdir):
+    """Fetch pkg's .deb straight from the mirror: walk the Packages indexes for
+    suite{,-updates,-security} x components, resolve Filename, download it."""
+    base = arch_base_url(arch)
+    for try_suite in (f"{suite}-updates", f"{suite}-security", suite):
+        for comp in _COMPONENTS:
+            data = _fetch(f"{base}/dists/{try_suite}/{comp}/binary-{arch}/Packages.gz")
+            if data is None:
+                continue
+            filename = _filename_from_packages(data, pkg)
+            if not filename:
+                continue
+            deb = _fetch(f"{base}/{filename}")
+            if deb is None:
+                return None
+            dest = Path(workdir) / Path(filename).name
+            dest.write_bytes(deb)
+            return dest
     return None
 
 
@@ -131,17 +204,23 @@ def main():
     args = [a for a in args if a != "--scripts"]
 
     if not args:
-        print("usage: deb-list <package> [arch] [--scripts]", file=sys.stderr)
+        print("usage: deb-list.py <package> [arch] [--scripts]", file=sys.stderr)
         sys.exit(1)
 
     pkg = args[0]
     arch = args[1] if len(args) > 1 else host_arch()
 
+    suite = read_suite()
+    if not suite:
+        print("error: could not read the release suite from ./chisel.yaml", file=sys.stderr)
+        print("hint:  run deb-list.py from a chisel-releases checkout", file=sys.stderr)
+        sys.exit(1)
+
     with tempfile.TemporaryDirectory() as workdir:
-        deb = download_deb(pkg, arch, workdir)
+        deb = download_deb(pkg, arch, suite, workdir)
         if not deb:
-            print(f"error: apt-get download failed for {pkg} (arch {arch})", file=sys.stderr)
-            print("hint:  sudo apt-get update  -- then retry", file=sys.stderr)
+            print(f"error: {pkg} (arch {arch}) not found on the mirror for suite {suite}", file=sys.stderr)
+            print("hint:  check the package name + arch; the mirror must be reachable", file=sys.stderr)
             sys.exit(1)
 
         version = deb_field(deb, "Version")

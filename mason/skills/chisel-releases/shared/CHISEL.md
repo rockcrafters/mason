@@ -188,7 +188,7 @@ Always use Debian arch names in `arch:` fields: `amd64`, `arm64`, `armhf`, `i386
 
 ## Cross-Release Differences
 
-SDFs for the same package differ across Ubuntu release branches. Forward-porting is **adaptation, not copy-paste**. Always run `deb-list` against each target release and verify actual `.deb` contents.
+SDFs for the same package differ across Ubuntu release branches. Forward-porting is **adaptation, not copy-paste**. Always run `deb-list.py` against each target release and verify actual `.deb` contents.
 
 | Category | Example | What changes |
 |----------|---------|-------------|
@@ -199,7 +199,7 @@ SDFs for the same package differ across Ubuntu release branches. Forward-porting
 | **Essential syntax** | List (`- foo_bar`) vs map (`foo_bar:`) | v3 branches may use map syntax in `essential:`. Match the convention of the target branch |
 | **Slice granularity** | `bashbug` inline in `bins` (24.04) vs separate `bashbug` slice (26.04) | Newer releases may demand finer-grained decomposition |
 | **New/removed files** | New config files, removed scripts | `.deb` contents change between releases. Some paths exist in one release but not another |
-| **Dependency changes** | New deps added, old deps dropped | `Depends:` may differ. Always re-check with `deb-list` or `apt-cache depends` |
+| **Dependency changes** | New deps added, old deps dropped | `Depends:` may differ. Always re-check with `deb-list.py` or `apt-cache depends` |
 
 ## Spread Test Infrastructure
 

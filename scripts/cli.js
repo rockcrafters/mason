@@ -104,7 +104,7 @@ function plan(srcContent, dst, force) {
   return force ? 'write' : 'conflict';
 }
 
-function placeFile(srcContent, dst, opts, logs, warns) {
+function placeFile(srcContent, dst, opts, logs, warns, mode) {
   const rel = path.relative(opts.target, dst);
   const action = plan(srcContent, dst, opts.force);
   if (action === 'skip') { logs.push(`up-to-date: ${rel}`); return; }
@@ -112,13 +112,14 @@ function placeFile(srcContent, dst, opts, logs, warns) {
   if (opts.dryRun) { logs.push(`would write: ${rel}`); return; }
   fs.mkdirSync(path.dirname(dst), { recursive: true });
   fs.writeFileSync(dst, srcContent);
+  if (mode !== undefined) fs.chmodSync(dst, mode); // preserve +x so scripts/ run when invoked by path
   logs.push(`wrote: ${rel}`);
 }
 
 function copyTree(srcRoot, dstRoot, opts, logs, warns) {
   for (const src of listFiles(srcRoot)) {
     const dst = path.join(dstRoot, path.relative(srcRoot, src));
-    placeFile(fs.readFileSync(src), dst, opts, logs, warns);
+    placeFile(fs.readFileSync(src), dst, opts, logs, warns, fs.statSync(src).mode);
   }
 }
 

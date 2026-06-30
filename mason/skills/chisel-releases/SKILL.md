@@ -25,7 +25,7 @@ All paths below are written relative to `${MASON_ROOT}`.
 
 - `commands/` -- one command definition per file, loaded on demand
 - `shared/CHISEL.md` -- shared reference (format, branch model, schema versions, naming, sources of truth)
-- `scripts/` -- helpers (`deb-list`, `try-cut`)
+- `scripts/` -- helpers (`deb-list.py`, `try-cut`)
 - `schemas/commands.manifest.yaml` -- command index (name -> file)
 
 ## Shared reference
