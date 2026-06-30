@@ -6,7 +6,7 @@
 #   docker build -t mason-test/sandbox:26.04 tests/
 
 sandboxes:
-  - id: docker
+  - id: docker-mason-test
     kind: container
     driver: docker
     image: mason-test/sandbox:26.04
@@ -22,7 +22,7 @@ sandboxes:
 agents:
   - id: haiku
     kind: claude-cli-keyless
-    sandbox: docker
+    sandbox: docker-mason-test
     model: claude-haiku-4-5-20251001
     effort: low
 
@@ -30,71 +30,77 @@ agents:
 # the agent must reproduce it. collect gathers what the agent wrote.
 # single-target cases only for now -- multi-target denovo (i2c-tools, ipmitool)
 # are wired separately later.
+# each task's setup lives in tasks/prepare_<id>.sh (branch + knockout/denovo +
+# any target list baked in; shared logic in tasks/_lib.sh). collect is uniform
+# (tasks/collect.sh reads $PATS_TASK_ID). pats execs both directly with ${id} ->
+# the task id.
 tasks:
   - id: base-passwd
-    prompt-file: prompts/base-passwd.txt
-    prepare: scripts/prepare.sh base-passwd ubuntu-24.04
-    collect: scripts/collect.sh base-passwd
+    prompt: prompts/base-passwd.txt
+    prepare: tasks/prepare_${id}.sh
+    collect: tasks/collect.sh
   - id: ca-certificates
-    prompt-file: prompts/ca-certificates.txt
-    prepare: scripts/prepare.sh ca-certificates ubuntu-24.04
-    collect: scripts/collect.sh ca-certificates
+    prompt: prompts/ca-certificates.txt
+    prepare: tasks/prepare_${id}.sh
+    collect: tasks/collect.sh
   - id: curl
-    prompt-file: prompts/curl.txt
-    prepare: scripts/prepare.sh curl ubuntu-26.04
-    collect: scripts/collect.sh curl
+    prompt: prompts/curl.txt
+    prepare: tasks/prepare_${id}.sh
+    collect: tasks/collect.sh
   - id: python3-minimal
-    prompt-file: prompts/python3-minimal.txt
-    prepare: scripts/prepare.sh python3-minimal ubuntu-26.04
-    collect: scripts/collect.sh python3-minimal
+    prompt: prompts/python3-minimal.txt
+    prepare: tasks/prepare_${id}.sh
+    collect: tasks/collect.sh
   - id: python3-pip
-    prompt-file: prompts/python3-pip.txt
-    prepare: scripts/prepare.sh python3-pip ubuntu-26.04
-    collect: scripts/collect.sh python3-pip
+    prompt: prompts/python3-pip.txt
+    prepare: tasks/prepare_${id}.sh
+    collect: tasks/collect.sh
   - id: python3.14-minimal
-    prompt-file: prompts/python3.14-minimal.txt
-    prepare: scripts/prepare.sh python3.14-minimal ubuntu-26.04
-    collect: scripts/collect.sh python3.14-minimal
+    prompt: prompts/python3.14-minimal.txt
+    prepare: tasks/prepare_${id}.sh
+    collect: tasks/collect.sh
   - id: python3.14
-    prompt-file: prompts/python3.14.txt
-    prepare: scripts/prepare.sh python3.14 ubuntu-26.04
-    collect: scripts/collect.sh python3.14
+    prompt: prompts/python3.14.txt
+    prepare: tasks/prepare_${id}.sh
+    collect: tasks/collect.sh
   # denovo, multi-target: ground truth = silver files; one agent run authors
   # several slices, scorers average across targets.
   - id: i2c-tools
-    prompt-file: prompts/i2c-tools.txt
-    prepare: scripts/prepare-denovo.sh i2c-tools ubuntu-26.04 libi2c0 udev i2c-tools
-    collect: scripts/collect.sh i2c-tools
+    prompt: prompts/i2c-tools.txt
+    prepare: tasks/prepare_${id}.sh
+    collect: tasks/collect.sh
   - id: ipmitool
-    prompt-file: prompts/ipmitool.txt
-    prepare: scripts/prepare-denovo.sh ipmitool ubuntu-26.04 freeipmi-common libfreeipmi17 ipmitool
-    collect: scripts/collect.sh ipmitool
+    prompt: prompts/ipmitool.txt
+    prepare: tasks/prepare_${id}.sh
+    collect: tasks/collect.sh
 
+# each scorer is a standalone uv script scorers/scorer_<id>.py (shared helpers
+# in scorers/_lib.py). pats execs it directly; first stdout line = float [0,1]
+# or `na` (skip). ${id} -> the scorer id.
 scorers:
-  # all dispatch through one wrapper (scorers/run.sh) keyed on the scorer id.
-  - {id: target-present,              kind: bash, file: scorers/run.sh}
-  - {id: yaml-parses,                 kind: bash, file: scorers/run.sh}
-  - {id: filename-matches-package,    kind: bash, file: scorers/run.sh}
-  - {id: paths-sorted,                kind: bash, file: scorers/run.sh}
-  - {id: copyright-essential,         kind: bash, file: scorers/run.sh}
-  - {id: copyright-path-present,      kind: bash, file: scorers/run.sh}
-  - {id: arch-format,                 kind: bash, file: scorers/run.sh}
-  - {id: mutate-present,              kind: bash, file: scorers/run.sh}
-  - {id: mutate-paths,                kind: bash, file: scorers/run.sh}
-  - {id: no-man-pages,                kind: bash, file: scorers/run.sh}
-  - {id: no-doc-clutter,             kind: bash, file: scorers/run.sh}
-  - {id: no-shell-completions,        kind: bash, file: scorers/run.sh}
-  - {id: mutable-has-text,            kind: bash, file: scorers/run.sh}
-  - {id: slice-count-not-inflated,    kind: bash, file: scorers/run.sh}
-  - {id: slice-names-canonical,       kind: bash, file: scorers/run.sh}
-  - {id: structural-distance,         kind: bash, file: scorers/run.sh}
-  - {id: spread-test-present,         kind: bash, file: scorers/run.sh}
-  - {id: spread-exercises-binaries,   kind: bash, file: scorers/run.sh}
-  - {id: v3-essential-format-compat,  kind: bash, file: scorers/run.sh}
-  - {id: essential-map-format-compat, kind: bash, file: scorers/run.sh}
-  - {id: hint-format-compat,          kind: bash, file: scorers/run.sh}
-  - {id: prefer-format-compat,        kind: bash, file: scorers/run.sh}
-  - {id: essential-list-on-v1,        kind: bash, file: scorers/run.sh}
+  - {id: target-present,              score: "scorers/scorer_${id}.py"}
+  - {id: yaml-parses,                 score: "scorers/scorer_${id}.py"}
+  - {id: filename-matches-package,    score: "scorers/scorer_${id}.py"}
+  - {id: paths-sorted,                score: "scorers/scorer_${id}.py"}
+  - {id: copyright-essential,         score: "scorers/scorer_${id}.py"}
+  - {id: copyright-path-present,      score: "scorers/scorer_${id}.py"}
+  - {id: arch-format,                 score: "scorers/scorer_${id}.py"}
+  - {id: mutate-present,              score: "scorers/scorer_${id}.py"}
+  - {id: mutate-paths,                score: "scorers/scorer_${id}.py"}
+  - {id: no-man-pages,                score: "scorers/scorer_${id}.py"}
+  - {id: no-doc-clutter,             score: "scorers/scorer_${id}.py"}
+  - {id: no-shell-completions,        score: "scorers/scorer_${id}.py"}
+  - {id: mutable-has-text,            score: "scorers/scorer_${id}.py"}
+  - {id: slice-count-not-inflated,    score: "scorers/scorer_${id}.py"}
+  - {id: slice-names-canonical,       score: "scorers/scorer_${id}.py"}
+  - {id: structural-distance,         score: "scorers/scorer_${id}.py"}
+  - {id: spread-test-present,         score: "scorers/scorer_${id}.py"}
+  - {id: spread-exercises-binaries,   score: "scorers/scorer_${id}.py"}
+  - {id: v3-essential-format-compat,  score: "scorers/scorer_${id}.py"}
+  - {id: essential-map-format-compat, score: "scorers/scorer_${id}.py"}
+  - {id: hint-format-compat,          score: "scorers/scorer_${id}.py"}
+  - {id: prefer-format-compat,        score: "scorers/scorer_${id}.py"}
+  - {id: essential-list-on-v1,        score: "scorers/scorer_${id}.py"}
 
 test-matrix:
   - agent: haiku
