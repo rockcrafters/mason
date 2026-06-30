@@ -18,11 +18,15 @@ RUN apt-get update && \
         nodejs \
         npm \
         python3 \
+        ripgrep \
         dpkg-dev && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 ARG CLAUDE_CLI_VERSION=latest
-RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CLI_VERSION}" && \
+ARG OPENCODE_VERSION=latest
+RUN npm install -g \
+        "@anthropic-ai/claude-code@${CLAUDE_CLI_VERSION}" \
+        "opencode-ai@${OPENCODE_VERSION}" && \
     npm cache clean --force
 
 # chisel: latest release binary for the build arch (try-cut needs it).

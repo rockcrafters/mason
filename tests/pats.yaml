@@ -6,6 +6,14 @@
 #   docker build -t mason-test/sandbox:26.04 tests/
 
 sandboxes:
+  # github.com / raw.githubusercontent.com / codeload.github.com are deliberately
+  # NOT allowed on either sandbox below. the skill's write-slice workflow (Step 2)
+  # legitimately wants to fetch sibling-branch SDFs from github for cross-release
+  # comparison -- but for several of our knockout cases that sibling SDF IS (or is
+  # near-identical to) the held-out answer, so allowing github would reopen the
+  # answer-leak this harness exists to prevent. Step 2 is expected to fail/no-op
+  # under this policy; that's intentional, not a gap.
+  # claude-cli harness: only anthropic + apt mirrors.
   - id: docker-mason-test
     kind: container
     driver: docker
@@ -15,8 +23,23 @@ sandboxes:
       default: deny
       allow:
         - .anthropic.com   # claude api
-        - .claude.com      # claude-cli auth/inference (platform.claude.com)
+        - .claude.com      # claude-cli auth (platform.claude.com) -- not hit every
+                           # run (token-refresh path), but required when it fires:
+                           # missing it causes "401 Invalid authentication credentials"
         - .ubuntu.com      # apt mirrors (archive/ports/security) for deb-list
+  # opencode harness: openrouter + its startup fetches (model catalog, npm) + apt.
+  - id: docker-mason-test-oc
+    kind: container
+    driver: docker
+    image: mason-test/sandbox:26.04
+    egress:
+      mode: proxy
+      default: deny
+      allow:
+        - openrouter.ai        # opencode -> openrouter (proxies to providers)
+        - models.dev           # opencode model catalog
+        - registry.npmjs.org   # opencode runtime plugin/dep fetch
+        - .ubuntu.com          # apt mirrors for deb-list
 
 
 agents:
@@ -25,6 +48,10 @@ agents:
     sandbox: docker-mason-test
     model: claude-haiku-4-5-20251001
     effort: low
+  - id: gemini
+    kind: opencode-openrouter
+    sandbox: docker-mason-test-oc
+    model: google/gemini-2.5-flash-lite
 
 # knockout: prepare deletes the real slice (snapshotting it as ground truth);
 # the agent must reproduce it. collect gathers what the agent wrote.
@@ -39,40 +66,49 @@ tasks:
     prompt: prompts/base-passwd.txt
     prepare: tasks/prepare_${id}.sh
     collect: tasks/collect.sh
+    timeout: 10m
   - id: ca-certificates
     prompt: prompts/ca-certificates.txt
     prepare: tasks/prepare_${id}.sh
     collect: tasks/collect.sh
+    timeout: 10m
   - id: curl
     prompt: prompts/curl.txt
     prepare: tasks/prepare_${id}.sh
     collect: tasks/collect.sh
+    timeout: 10m
   - id: python3-minimal
     prompt: prompts/python3-minimal.txt
     prepare: tasks/prepare_${id}.sh
     collect: tasks/collect.sh
+    timeout: 10m
   - id: python3-pip
     prompt: prompts/python3-pip.txt
     prepare: tasks/prepare_${id}.sh
     collect: tasks/collect.sh
+    timeout: 10m
   - id: python3.14-minimal
     prompt: prompts/python3.14-minimal.txt
     prepare: tasks/prepare_${id}.sh
     collect: tasks/collect.sh
+    timeout: 10m
   - id: python3.14
     prompt: prompts/python3.14.txt
     prepare: tasks/prepare_${id}.sh
     collect: tasks/collect.sh
+    timeout: 10m
   # denovo, multi-target: ground truth = silver files; one agent run authors
   # several slices, scorers average across targets.
   - id: i2c-tools
     prompt: prompts/i2c-tools.txt
     prepare: tasks/prepare_${id}.sh
     collect: tasks/collect.sh
+    timeout: 10m
   - id: ipmitool
     prompt: prompts/ipmitool.txt
     prepare: tasks/prepare_${id}.sh
     collect: tasks/collect.sh
+    timeout: 10m
 
 # each scorer is a standalone uv script scorers/scorer_<id>.py (shared helpers
 # in scorers/_lib.py). pats execs it directly; first stdout line = float [0,1]
@@ -94,6 +130,7 @@ scorers:
   - {id: slice-count-not-inflated,    score: "scorers/scorer_${id}.py"}
   - {id: slice-names-canonical,       score: "scorers/scorer_${id}.py"}
   - {id: structural-distance,         score: "scorers/scorer_${id}.py"}
+  - {id: chisel-cut,                  score: "scorers/scorer_${id}.py"}
   - {id: spread-test-present,         score: "scorers/scorer_${id}.py"}
   - {id: spread-exercises-binaries,   score: "scorers/scorer_${id}.py"}
   - {id: v3-essential-format-compat,  score: "scorers/scorer_${id}.py"}
@@ -103,7 +140,7 @@ scorers:
   - {id: essential-list-on-v1,        score: "scorers/scorer_${id}.py"}
 
 test-matrix:
-  - agent: haiku
+  - agent: [haiku, gemini]
     task: "*"
 
 scorer-matrix:
