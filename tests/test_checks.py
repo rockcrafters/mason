@@ -105,9 +105,18 @@ def test_check_test() -> None:
         out = run("check-test.py", sdf, exercised)
         assert "ok:" in out, out
 
+        # a test that touches none of the binaries is the red flag (warn).
         missing = write(d, "empty.yaml", "summary: x\nexecute: |\n  true\n")
         out = run("check-test.py", sdf, missing)
-        assert "binary 'foo'" in out and "never exercised" in out, out
+        assert "warn" in out and "exercises none" in out, out
+
+        # partial coverage is advisory (info), not a warn: two bins, one tested.
+        two = "package: foo\nessential:\n  - foo_copyright\nslices:\n  bins:\n    contents:\n      /usr/bin/foo:\n      /usr/bin/zzz:\n  copyright:\n    contents:\n      /usr/share/doc/foo/copyright:\n"
+        sdf2 = write(d, "foo2.yaml", two)
+        one = write(d, "one.yaml", 'summary: x\nexecute: |\n  chroot "$r" foo --version\n')
+        out = run("check-test.py", sdf2, one)
+        assert "info" in out and "1/2 binaries exercised" in out and "zzz" in out, out
+        assert "warn" not in out, out
 
 
 def test_check_diff() -> None:
