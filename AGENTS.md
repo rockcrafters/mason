@@ -20,7 +20,7 @@ three deterministic checkers are the backbone, so the commands don't rely on the
 - `check-test.py` -- reports any binary an SDF ships that its spread test never exercises (a top rejection reason).
 - `check-diff.py` -- append-only regressions between two SDF versions (removed SDF / slice / path), the `removed-slices` CI gate; works file-pair or `--base <ref>` via git.
 
-`write-slice` self-checks with these before commit; `review-slice` runs them as its first pass; together they're the intended engine for a future chisel-releases PR-review bot. static-check rule sets are kept in sync with the eval scorers under `tests/scorers/` (shared vocab like the canonical slice-name set lives in both).
+`write-slice` self-checks with these before commit; `review-slice` runs them as its first pass; together they're the intended engine for a future chisel-releases PR-review bot. static-check rule sets are kept in sync with the eval scorers under `tests/scorers/` (shared vocab like the canonical slice-name set lives in both). the checkers have their own regression net at `tests/test_checks.py` (assert-based, run with `uv run tests/test_checks.py`); the checkers are load-bearing, so keep it green when editing them.
 
 ## install
 
