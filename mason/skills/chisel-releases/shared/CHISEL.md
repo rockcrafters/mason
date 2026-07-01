@@ -181,8 +181,8 @@ Names are convention but reviewers enforce them. Use:
 
 | Name | Contents |
 |------|----------|
-| `bins` | Executables (plural; **never** `bin`) |
-| `libs` | Shared libraries (plural; **never** `lib`) |
+| `bins` | Executables (plural; use `bins` not `bin`). The singular `bin` is essentially only correct in `base-files`, whose `bin` slice builds the `/bin` directory tree, not executables |
+| `libs` | Shared libraries (plural; use `libs` not `lib`). Same `base-files` `lib` exception -- it makes the `/lib` tree |
 | `config` / `configs` | Configuration files. Break large configs into `<purpose>-config` (e.g. `modprobe-config`, `tmpfiles-config`, `pam-config`) |
 | `scripts` | Shell helpers / non-binary executables. Not in `bins` |
 | `data` | Static data (locales, templates, fonts) |
@@ -190,7 +190,7 @@ Names are convention but reviewers enforce them. Use:
 | `jars` | JVM artefacts |
 | `copyright` | Deb copyright file |
 | `license` / `notice` | Upstream licence/notice (**not** deb copyright). Depends on `<pkg>_copyright` |
-| `core` | Minimum-functional subset. **Not "everything"**. Avoid `all` (rejected) |
+| `core` | Minimum-functional subset. **Not "everything"**. Avoid `all` except a rare umbrella-aggregate slice (e.g. `fonts-ubuntu` ships every font under `all`) |
 | `standard` | Fuller-featured above `core` |
 | `var` | Directories/files under `/var/` |
 | `services` | Systemd service files |
@@ -211,11 +211,11 @@ A `.deb` ships files a minimal rootfs never needs. Do **not** slice these unless
 |----------|-------|-------|
 | **man pages** | `/usr/share/man/`, `/usr/man/` | never shipped |
 | **shell completions** | `/usr/share/bash-completion/`, `/usr/share/fish/`, `/usr/share/zsh/`, `/etc/bash_completion.d/` | never shipped |
-| **docs / changelogs** | `/usr/share/doc/**` | **except** `/usr/share/doc/<pkg>/copyright` (the one file the `copyright` slice ships) |
+| **docs / changelogs** | `/usr/share/doc/**` | **except** the legal files below |
 | **doc-base / lintian** | `/usr/share/doc-base/`, `/usr/share/lintian/` | packaging metadata, not runtime |
 | **examples** | `/usr/share/doc/*/examples/`, `.../example*` | covered by the doc rule above |
 
-The only file under `/usr/share/doc/<pkg>/` you ever ship is `copyright`. Everything else there is clutter.
+Under `/usr/share/doc/<pkg>/`, ship only legal files: `copyright` always, and the upstream legal notices (`NOTICE`, `LICENSE`, `COPYING`, `AUTHORS`, with `.txt`/`.gz` variants) where the package carries them for licence compliance -- apache2, aspnetcore, and libaprutil1t64 do. Everything else there (README, changelog, NEWS, examples) is clutter. Shared-copyright packages instead ship `/usr/share/doc/<pkg>` itself as a symlink to another package's doc dir (gcc/cpp/binutils families); that bare entry is also fine.
 
 ## Debian Architecture Names
 

@@ -111,7 +111,7 @@ Reading the output:
 - Add `mode:` to a slice entry only when the permission is non-standard (not `0644`/`0755`/`0777`).
 - If `--scripts` shows `postinst` calling `update-alternatives`, `ldconfig`, or `update-mime-database`, those side-effects don't run in a chisel rootfs -- either drop the dep or write a `mutate:` equivalent.
 - Run once per target arch when multiarch differences are expected (`deb-list.py libfoo amd64`, then `deb-list.py libfoo arm64`).
-- **Ignore the clutter.** deb-list prints everything the deb ships, including man pages, shell completions, `/usr/share/doc/**`, changelogs, examples. Those are excluded by convention (see "Exclude by Default" in `shared/CHISEL.md`) -- the only `/usr/share/doc/` path you ship is `copyright`.
+- **Ignore the clutter.** deb-list prints everything the deb ships, including man pages, shell completions, `/usr/share/doc/**`, changelogs, examples. Those are excluded by convention (see "Exclude by Default" in `shared/CHISEL.md`) -- under `/usr/share/doc/` ship only legal files (`copyright`, and `NOTICE`/`LICENSE`-type notices where present).
 
 Requires `dpkg-deb` + network to the mirror (archive.ubuntu.com / ports.ubuntu.com). No sudo or apt cache needed.
 
@@ -543,7 +543,7 @@ slices:
 12. **Shallow testing.** `--version` alone is not sufficient for applications. Every binary in `bins` must be exercised.
 13. **Adding speculative slices.** Only ship slices that are needed and testable. Speculative slices are rejected.
 14. **Use-case-specific comments.** Comments like "this slice exists for app X" are rejected. Describe what the slice ships.
-15. **Shipping clutter.** Man pages, shell completions, `/usr/share/doc/**` (except the one `copyright` file), changelogs, examples, `doc-base`/`lintian` metadata -- the deb ships them, a minimal rootfs never needs them. See "Exclude by Default" in `shared/CHISEL.md`. Don't add them just because `deb-list.py` lists them.
+15. **Shipping clutter.** Man pages, shell completions, `/usr/share/doc/**` (except `copyright` + `NOTICE`/`LICENSE`-type legal files), changelogs, examples, `doc-base`/`lintian` metadata -- the deb ships them, a minimal rootfs never needs them. See "Exclude by Default" in `shared/CHISEL.md`. Don't add them just because `deb-list.py` lists them.
 16. **Over-including "to be safe".** If a dep or path isn't demonstrably needed, leave it out (add a one-line comment noting why). Reviewers prune speculative deps.
 17. **Shipping config for a tool that isn't sliced.** A config file for a program not in chisel-releases (e.g. a `logrotate` drop-in when `logrotate` isn't sliced) is dead weight -- drop it.
 18. **Patch-level version globs.** Pin only major.minor (`rustc-1.93.*`), never the patch -- it breaks on the next update.

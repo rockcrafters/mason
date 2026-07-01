@@ -71,13 +71,13 @@ Published slices are **append-only in spirit**. Removing files from an existing 
 
 Verify against the Canonical Slice Names table in `shared/CHISEL.md`:
 
-- `bins` (never `bin`) for executables
-- `libs` (never `lib`) for shared libraries
+- `bins` not `bin` for executables (the singular `bin` is only right in `base-files`, which builds the `/bin` directory tree)
+- `libs` not `lib` for shared libraries (same `base-files` exception for the `/lib` tree)
 - `config` for configuration files; break large configs into `<purpose>-config`
 - `scripts` for non-binary executables (not in `bins`)
 - `copyright` for deb copyright (mandatory)
 - `license` / `notice` for upstream licence/notice (separate from `copyright`)
-- `core` for minimum-functional subset (never `all` -- rejected)
+- `core` for minimum-functional subset; avoid `all` except a rare umbrella aggregate (e.g. `fonts-ubuntu`)
 - When deb already names `<pkg>-core`, keep verbatim
 
 Slice names must: be lowercase, >= 3 characters, only `a-z 0-9 -`, start with a letter.
@@ -158,7 +158,7 @@ Defer to [`CONTRIBUTING.md`](https://github.com/canonical/chisel-releases/blob/m
 11. Missing forward-port PRs for newer release branches
 12. Files removed from existing published slice (regression)
 13. `package:` field doesn't match YAML filename stem
-14. Clutter shipped: man pages (`/usr/share/man/`), shell completions, `/usr/share/doc/**` other than the single `copyright` file, changelogs, examples, `doc-base`/`lintian` metadata (see "Exclude by Default" in `shared/CHISEL.md`)
+14. Clutter shipped: man pages (`/usr/share/man/`), shell completions, `/usr/share/doc/**` other than `copyright` + `NOTICE`/`LICENSE`-type legal files, changelogs, examples, `doc-base`/`lintian` metadata (see "Exclude by Default" in `shared/CHISEL.md`)
 15. Over-included deps with no demonstrated need, or config for a tool not sliced in chisel-releases
 16. Patch-level version globs, or overly broad globs that collide across packages
 17. Tests reuse one rootfs (leftover slices mask missing deps) or depend on external hosts
