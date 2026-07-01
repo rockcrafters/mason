@@ -98,7 +98,7 @@ def fmt() -> int | None:
 CANONICAL = {
     "bins", "libs", "config", "configs", "data", "scripts", "copyright",
     "core", "standard", "var", "headers", "jars", "license", "notice",
-    "locales", "services", "modules", "tables", "chisel",
+    "locales", "services", "modules", "tables", "chisel", "rules", "dev",
 }
 BIN_DIRS = ("/usr/bin/", "/usr/sbin/", "/bin/", "/sbin/", "/usr/libexec/")
 

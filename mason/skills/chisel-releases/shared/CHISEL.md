@@ -45,8 +45,8 @@ Live release list: repo [README.md](https://github.com/canonical/chisel-releases
 | Version | Branches | Min chisel | Key additions |
 |---------|----------|------------|---------------|
 | **v1** | `ubuntu-20.04`, `-22.04`, `-24.04` | any | Separate `v2-archives:` for pro/esm |
-| **v2** | `ubuntu-25.10` | >= v1.2.0 | Pro archives unified under `archives:` via `pro:` subkey. Adds `prefer:` |
-| **v3** | `ubuntu-26.04` | >= v1.4.0 | Adds `hint:` on slices + `v3-essential:` for arch-gated deps |
+| **v2** | `ubuntu-25.10` | >= v1.2.0 | Pro archives unified under `archives:` via `pro:` subkey. Adds `prefer:`. Backports arch-gated essentials via `v3-essential:` |
+| **v3** | `ubuntu-26.04` | >= v1.4.0 | Adds `hint:` on slices. `essential:` may be a **map** (`<slice>: {arch: ...}`), giving arch-gated deps natively -- so `v3-essential:` is not used here |
 
 Key fields: `format:` (gates available features), `archives.ubuntu.suites[0]` (codename, e.g. `noble`), `archives.ubuntu.version` (mirrors branch suffix), `maintenance.end-of-life` (date).
 
@@ -103,16 +103,39 @@ Key fields: `format:` (gates available features), `archives.ubuntu.suites[0]` (c
 - For merging/transforming existing files -- **not synthesis**. If a binary needs file `F`, ship `F` from the deb.
 - `until: mutate` partner: file available to the script, deleted post-mutate.
 
-### `v3-essential:` (v3+ only)
+### Arch-gated essentials
 
-Parallel map alongside `essential:`. Provides arch-gated cross-package deps:
+Some deps only apply on certain arches. How you express that depends on `format:`:
 
-```yaml
-v3-essential:
-  dotnet-sdk-aot-10.0_libs: {arch: [amd64, arm64]}
-```
+- **v1** -- no arch gating. `essential:` is a flat string list; that's all v1 has.
+- **v2** -- backport via a parallel `v3-essential:` map alongside the flat `essential:` list:
 
-Regular `essential:` stays a flat string list. Only `v3-essential:` accepts per-entry options (currently just `arch:`).
+  ```yaml
+  v3-essential:
+    dotnet-sdk-aot-10.0_libs: {arch: [amd64, arm64]}
+  ```
+
+- **v3** -- native: `essential:` itself may be a **map**, so per-entry `{arch: ...}` goes there directly. `v3-essential:` is not used on v3.
+
+  ```yaml
+  essential:
+    libc6_libs: {}
+    dotnet-sdk-aot-10.0_libs: {arch: [amd64, arm64]}
+  ```
+
+On v3 a plain string-list `essential:` is still valid when no arch gating is needed (most SDFs); reach for the map form only when an entry needs `arch:`. Match the target branch's prevailing style.
+
+### `hint:` style (v3+)
+
+Optional one-line description of what a slice provides. Chisel caps it at 40 chars; the `validate-hints` CI check (spaCy) also enforces the style below. A hint is a **noun phrase**, not a sentence:
+
+- sentence case: first letter uppercase.
+- no finite verbs -- phrase as a noun fragment, not "Manages X" / "Views Y".
+- no leading article (`a` / `an` / `the`).
+- allowed chars only: letters, digits, spaces, and `. , ; ( )`. Separate fragments with `;`.
+- no trailing punctuation or space; no double spaces.
+
+e.g. `hint: System log viewer` (not `hint: Views system logs`).
 
 ### Manifest & Pro Archives
 
@@ -173,8 +196,26 @@ Names are convention but reviewers enforce them. Use:
 | `services` | Systemd service files |
 | `modules` | Loadable modules/plugins |
 | `locales` | Translation/locale files |
+| `tables` | Static data tables (e.g. `dpkg_tables` ships `/usr/share/dpkg/*table`) |
+| `chisel` | The generated manifest slice; only on `base-files` (`generate: manifest`) |
+| `rules` | udev / polkit rules (e.g. `/usr/lib/udev/rules.d/*.rules`) |
+| `dev` | Development files (headers + `.so` dev symlinks) in the by-function layout |
 
 When the deb already names `<pkg>-core` (e.g. `git-core`), keep the name verbatim.
+
+## Exclude by Default
+
+A `.deb` ships files a minimal rootfs never needs. Do **not** slice these unless a concrete runtime need is proven -- reviewers reject them, and each has its own CI/eval gate:
+
+| Excluded | Paths | Notes |
+|----------|-------|-------|
+| **man pages** | `/usr/share/man/`, `/usr/man/` | never shipped |
+| **shell completions** | `/usr/share/bash-completion/`, `/usr/share/fish/`, `/usr/share/zsh/`, `/etc/bash_completion.d/` | never shipped |
+| **docs / changelogs** | `/usr/share/doc/**` | **except** `/usr/share/doc/<pkg>/copyright` (the one file the `copyright` slice ships) |
+| **doc-base / lintian** | `/usr/share/doc-base/`, `/usr/share/lintian/` | packaging metadata, not runtime |
+| **examples** | `/usr/share/doc/*/examples/`, `.../example*` | covered by the doc rule above |
+
+The only file under `/usr/share/doc/<pkg>/` you ever ship is `copyright`. Everything else there is clutter.
 
 ## Debian Architecture Names
 

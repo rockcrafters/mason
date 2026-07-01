@@ -15,6 +15,20 @@ You are read-only: inspect the diff / SDFs and return a review report. Do not ed
 
 ---
 
+## Deterministic first pass
+
+Before reasoning about anything, run the bundled linter on every changed SDF:
+
+```bash
+scripts/check-slice.py slices/<pkg>.yaml [slices/<pkg2>.yaml ...]
+```
+
+It reads `format:` from `./chisel.yaml` (or pass `--branch ubuntu-XX.XX`). It deterministically checks the mechanical gates -- sorting, naming, absolute paths, copyright presence, clutter exclusion, arch formatting, and version-gated fields (`hint`/`prefer`/`v3-essential`/essential-as-map). Fold its output straight into your report: map `block` -> blocking, `warn` -> should-fix. Then spend your own judgement on what it can't check: dependency accuracy, test quality, design, and forward-porting.
+
+It does not cut a rootfs or run tests -- `chisel cut` (the `install-slices` CI check) and spread cover those.
+
+---
+
 ## CI Checks
 
 These automated checks run on every PR. Understand what each one validates:
@@ -38,6 +52,9 @@ All checks must be green before review. `pkg-deps` is non-blocking but reviewers
 - **Stay true to deb's declared deps.** Each direct `apt Depends:` should appear as an `essential:` entry. Cross-check via `pkg-deps` CI output.
 - **Maintainer postinst is not mirrored.** If upstream `postinst` invokes another package's tool (e.g. `update-mime-database`), either drop the dep or write a `mutate:` equivalent. Do not pull in the tool's package as a dependency.
 - **Only slices we need.** Speculative slices (slices added "just in case") are rejected.
+- **Don't over-include.** A dep or path with no demonstrated need is pruned -- "if in doubt, leave it out". Flag deps that aren't justified by `ldd`/`lddtree` or a documented runtime lookup.
+- **All transitive lib providers listed.** `bins`/`libs` slices must name every shared-lib provider `lddtree` shows, even transitive ones (`libc6_libs`, `libgcc-s1_libs`, `libstdc++6_libs`, ...). `pkg-deps` CI helps, but check `lddtree` per arch.
+- **No config for un-sliced tools.** A config file for a program not sliced in chisel-releases (e.g. a `logrotate` drop-in with no `logrotate` slice) is redundant -- push to drop it.
 - **Use-case-agnostic.** Comments like "this slice exists for app X" are rejected. Describe what the slice ships, not who it's for.
 
 ## Append-Only Principle
@@ -73,12 +90,13 @@ These are hard gates. Reject if violated:
 
 - **Multiarch lib glob**: `*-linux-*`, not explicit triples. E.g. `/usr/lib/*-linux-*/libnghttp2.so.14*:`.
 - **Drop trailing `*` for single-version sonames**: `libfoo.so.1:` not `libfoo.so.1*:`.
+- **Version globs pin major.minor only**, never the patch: `/usr/src/rustc-1.93.*/**`, `/usr/lib/perl5/*/`. Reject patch-level pins.
+- **Narrow globs.** A broad `**` or bare `*.pm` collides across packages. Push for another path level; a path more than one package could own is a red flag.
 - **No explicit `symlink:` if deb ships it.** Chisel preserves deb symlinks. Manual `symlink:` only for paths the deb doesn't ship (e.g. created by maintainer scripts).
 - **Annotate explicit symlinks**: `/usr/bin/dotnet:  # Symlink to ../lib/dotnet/dotnet`.
 - **Inline-style for short options**: `/path: {arch: [amd64, arm64]}`.
-- **Arch list formatting**: lowercase, alphabetical, single space after commas, no inner padding.
-  - Correct: `{arch: [amd64, arm64]}`
-  - Rejected: `{arch: [ amd64, arm64 ]}` or `{arch: [arm64, amd64]}`
+- **Arch names**: valid lowercase Debian names only (`amd64`, `arm64`, `armhf`, `i386`, `ppc64el`, `riscv64`, `s390x`) -- never `x86_64`/`aarch64`. This is a hard gate.
+- **Arch list order**: a nit, not a gate. Alphabetical reads tidily, but real SDFs (e.g. `systemd`) use a priority order; don't block on it.
 
 ## Schema Version Compliance
 
@@ -86,7 +104,8 @@ Check `format:` in `chisel.yaml` on the target branch:
 
 - `hint:` is **v3+ only**. Reject if used on v1/v2 branches.
 - `prefer:` is **v2+ only**. Reject if used on v1 branches.
-- `v3-essential:` (arch-gated deps map) is **v3+ only**.
+- `essential:`-as-map is **v3+ only**. On v1/v2 `essential:` must be a flat string list.
+- `v3-essential:` is the **v2 backport** for arch-gated essentials. On v3, use `essential:`-as-map instead; v1 has no arch gating.
 - `pro:` under `archives:` is v2+ unified. v1 uses separate `v2-archives:` block.
 
 ## Testing Requirements
@@ -95,6 +114,8 @@ Check `format:` in `chisel.yaml` on the target branch:
 - **Untestable means unshippable.** Push to drop rather than ship untested.
 - **~80% coverage** is a soft target mentioned in PR coverage comments. Not a hard gate but actively watched.
 - **Functional slices need functional tests.** `--version` alone is insufficient for applications. Test actual functionality.
+- **One rootfs per test.** Reusing a rootfs across tests lets leftover slices mask a missing dependency -- push to split into a fresh `install-slices` per test.
+- **Hermetic tests.** No external hosts, no apt-installing extras, inputs generated inline. Bounded waits (no naked `sleep`/infinite retry). `grep -Fiq` for assertions.
 - Tests live at `tests/spread/integration/<pkg>/task.yaml`.
 
 ## Forward-Port Requirements
@@ -118,7 +139,7 @@ Defer to [`CONTRIBUTING.md`](https://github.com/canonical/chisel-releases/blob/m
 
 ## Common Rejection Reasons
 
-1. Unsorted `contents` paths
+1. Unsorted `contents` paths or unsorted `essential:` entries
 2. Missing `copyright` slice or not in global `essential:`
 3. `Recommends:`/`Suggests:` included as dependencies
 4. Speculative slices with no demonstrated need
@@ -126,11 +147,15 @@ Defer to [`CONTRIBUTING.md`](https://github.com/canonical/chisel-releases/blob/m
 6. `bin`/`lib` instead of `bins`/`libs`
 7. Explicit `symlink:` for paths the deb already ships
 8. Missing tests for binaries in `bins` slice
-9. Arch list with wrong formatting (inner spaces, wrong order)
+9. Invalid arch names (`x86_64`/`aarch64` instead of `amd64`/`arm64`)
 10. v3 features (`hint:`) used on v1/v2 branches
 11. Missing forward-port PRs for newer release branches
 12. Files removed from existing published slice (regression)
 13. `package:` field doesn't match YAML filename stem
+14. Clutter shipped: man pages (`/usr/share/man/`), shell completions, `/usr/share/doc/**` other than the single `copyright` file, changelogs, examples, `doc-base`/`lintian` metadata (see "Exclude by Default" in `shared/CHISEL.md`)
+15. Over-included deps with no demonstrated need, or config for a tool not sliced in chisel-releases
+16. Patch-level version globs, or overly broad globs that collide across packages
+17. Tests reuse one rootfs (leftover slices mask missing deps) or depend on external hosts
 
 ## Copilot Warning
 
