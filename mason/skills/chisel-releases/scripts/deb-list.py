@@ -8,9 +8,11 @@ Usage: deb-list.py <package> [arch] [--scripts] [--sdf]
              valid values: amd64 arm64 armhf i386 ppc64el riscv64 s390x
   --scripts  print full bodies of all present maintainer scripts
   --sdf      instead of the listing, print a DRAFT slice definition file:
-             files grouped into bins/libs/config/copyright, clutter dropped,
-             multiarch lib dirs globbed, copyright wired, contents sorted.
-             a starting point -- the author still adds cross-package
+             files grouped into bins/libs/config/headers/var/copyright,
+             clutter dropped, multiarch lib dirs globbed, copyright wired
+             (incl. shared-copyright doc-dir symlinks), contents sorted.
+             ambiguous /usr/lib and /usr/share files are left as "unplaced"
+             comments. a starting point -- the author adds cross-package
              essentials, places unplaced files, and refines the grouping.
 
 Default output:
@@ -227,7 +229,10 @@ def classify(path, tag):
     if any(path.startswith(c) for c in _CLUTTER):
         return None
     if path.startswith("/usr/share/doc/"):
-        return "copyright" if _is_legal_doc(path.rstrip("/").rsplit("/", 1)[-1]) else None
+        rest = path[len("/usr/share/doc/"):].rstrip("/")
+        if "/" not in rest:  # the doc dir itself -- shared-copyright symlink target
+            return "copyright"
+        return "copyright" if _is_legal_doc(rest.rsplit("/", 1)[-1]) else None
     if tag == "x" and any(path.startswith(d) for d in BIN_DIRS):
         return "bins"
     base = path.rsplit("/", 1)[-1]
@@ -235,6 +240,12 @@ def classify(path, tag):
         return "libs"
     if path.startswith("/etc/"):
         return "config"
+    if path.startswith("/usr/include/"):
+        return "headers"
+    if path.startswith("/var/"):
+        return "var"
+    # /usr/lib and /usr/share non-.so files are genuinely ambiguous (modules vs
+    # data vs services vs config) -- leave them for the author, don't misgroup.
     return "unplaced"
 
 
@@ -245,13 +256,16 @@ def _glob_triple(path):
 def build_sdf(pkg, depends, entries):
     """Group deb contents into a draft SDF. Deterministic starting point; the
     author still wires cross-package essentials and refines the grouping."""
-    buckets = {"bins": [], "libs": [], "config": [], "copyright": [], "unplaced": []}
+    buckets = {"bins": [], "libs": [], "config": [], "headers": [], "var": [], "copyright": [], "unplaced": []}
     for path, tag, _perms, _owner, _sym in entries:
         b = classify(path, tag)
         if b is None:
             continue
         buckets[b].append(_glob_triple(path) if b == "libs" else path)
-    buckets["copyright"].append(f"/usr/share/doc/{pkg}/copyright")
+    # fall back to the conventional copyright path only if the deb shipped no
+    # copyright/legal file and no doc-dir symlink (shared copyright) of its own.
+    if not buckets["copyright"]:
+        buckets["copyright"].append(f"/usr/share/doc/{pkg}/copyright")
 
     out = [f"package: {pkg}", ""]
     out += [
@@ -266,7 +280,7 @@ def build_sdf(pkg, depends, entries):
         "",
         "slices:",
     ]
-    for name in ("bins", "libs", "config"):
+    for name in ("bins", "libs", "config", "headers", "var"):
         paths = sorted(set(buckets[name]))
         if not paths:
             continue
