@@ -165,12 +165,43 @@ def check_slices(doc: Any, fmt: int | None, f: Findings) -> None:
         check_slice_body(name, body, pkg, fmt, f)
 
 
+# validate-hints allows only these chars; chisel core caps length at 40 and
+# rejects non-printable. see shared/CHISEL.md "hint: style".
+_HINT_ALLOWED = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,;()")
+
+
+def check_hint(name: str, hint: Any, f: Findings) -> None:
+    if not isinstance(hint, str):
+        return
+    where = f"{name}.hint"
+    # chisel core (parse errors):
+    if len(hint) > 40:
+        f.block(where, f"hint is {len(hint)} chars -- chisel caps it at 40 (parse error)")
+    if "\n" in hint or any(not c.isprintable() for c in hint):
+        f.block(where, "hint must be a single line of printable chars (parse error)")
+    # validate-hints CI style (noun phrase; the finite-verb rule needs NLP, skipped):
+    if hint[:1].islower():
+        f.warn(where, "hint should be sentence case (capitalise the first letter)")
+    if re.match(r"(?i)^(a|an|the)\b", hint):
+        f.warn(where, "hint should not start with an article (a/an/the)")
+    if hint[-1:] in {".", ",", ";", ":", "!"}:
+        f.warn(where, "hint should not end with punctuation")
+    if "  " in hint or hint != hint.strip():
+        f.warn(where, "hint should have no double, leading, or trailing spaces")
+    stray = sorted(set(hint) - _HINT_ALLOWED - {"\n"})
+    if stray:
+        f.warn(where, f"hint has chars outside validate-hints' set {stray}; allowed: letters, digits, space, . , ; ( )")
+
+
 def check_slice_body(name: str, body: dict, pkg: str, fmt: int | None, f: Findings) -> None:
     if name in BAD_SLICE_NAMES:
         f.warn(f"slices.{name}", f"use '{BAD_SLICE_NAMES[name]}' not '{name}'")
 
-    if "hint" in body and (fmt is not None and fmt < 3):
-        f.block(f"{name}.hint", f"hint: is v3+ only (format is v{fmt})")
+    if "hint" in body:
+        if fmt is not None and fmt < 3:
+            f.block(f"{name}.hint", f"hint: is v3+ only (format is v{fmt})")
+        else:
+            check_hint(name, body["hint"], f)
 
     contents = body.get("contents")
     if not isinstance(contents, dict):
