@@ -257,7 +257,7 @@ It reads `format:` from `./chisel.yaml` automatically (or pass `--format N` / `-
 
 Testing is mandatory. Depth depends on what the package provides.
 
-**Testing blocks commit.** Do NOT proceed to Step 10 (commit) without tests landed. A `feat:` slice and its `test:` tests form one series -- both must exist before you stop. If tests aren't feasible, leave the slice uncommitted and report why; do not commit the slice alone.
+**Testing blocks commit.** Do NOT proceed to Step 11 (commit) without tests landed. A `feat:` slice and its `test:` tests form one series -- both must exist before you stop. If tests aren't feasible, leave the slice uncommitted and report why; do not commit the slice alone.
 
 #### Package classification
 
@@ -334,25 +334,9 @@ scripts/check-test.py slices/<package>.yaml
 
 It `warn`s when there's no test, or a test that exercises none of the binaries -- fix those before committing. It reports partial coverage as `info` with the list of untested binaries: review that list and add a check (or at least a linker-resolves skeleton) for each you reasonably can. Full coverage isn't demanded -- alternatives symlinks, multi-call binaries, and big suites are fine tested representatively.
 
-### Step 10: Commit
+### Step 10: Verify against docs
 
-**Precondition:** `scripts/check-slice.py slices/<pkg>.yaml` reports no `block` findings, `scripts/check-test.py slices/<pkg>.yaml` reports no `warn` (a test exists and exercises the binaries), and `tests/spread/integration/<pkg>/task.yaml` exists and passes (`spread lxd:tests/spread/integration/<pkg>`). If the linter blocks, the test is missing or exercises no binaries, or tests fail, stop -- do not commit a `feat:` slice with lint blocks or without working tests.
-
-Commit in two steps (one category per commit): the `feat:` slice first, then the `test:` tests. Both must land before you stop.
-
-```bash
-git -C <repo> commit -m "feat(<pkg>): add <slice-list> slices"
-```
-
-Follow [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/): `feat:`, `fix:`, `test:`, `ci:`, `chore:`, `docs:`. Subject lowercase, imperative, <=50 chars, no trailing period. Body wrap 72.
-
-**Stop here. The user opens the PR themselves.**
-
-Reminder: all PRs must be forward-ported oldest -> newest across all maintained release branches. Note any required forward-ports in your final report.
-
-### Step 11: Final verification against docs
-
-As a final check, cross-reference the authored SDFs against the official chisel documentation (the authoritative source of truth) and report any discrepancies:
+Before committing, cross-reference the authored SDFs against the official chisel documentation (the authoritative source of truth). Fix discrepancies now -- landing a commit and then finding it diverged means an avoidable amend.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/canonical/chisel-docs/main/docs/how-to/slice-a-package.md
@@ -360,9 +344,26 @@ curl -fsSL https://raw.githubusercontent.com/canonical/chisel-docs/main/docs/ref
 curl -fsSL https://raw.githubusercontent.com/canonical/chisel-docs/main/docs/reference/chisel-releases/chisel.yaml.md
 ```
 
-Check and report: does the SDF use any undocumented fields or patterns? Does the design match documented recommendations? Is the `format:` version compatible with all features used?
+Check: does the SDF use any undocumented fields or patterns? Does the design match documented recommendations? Is the `format:` version compatible with all features used? Fix any discrepancy before committing; note deliberate divergence in your final report.
 
 If tool behaviour diverged from the docs during `chisel cut` (a field ignored, a wildcard that didn't match, mutate running differently), note it -- the tool source at `https://raw.githubusercontent.com/canonical/chisel/main/internal/setup/setup.go` is the ultimate arbiter.
+
+### Step 11: Commit
+
+**Precondition:** `scripts/check-slice.py slices/<pkg>.yaml` reports no `block` findings, `scripts/check-test.py slices/<pkg>.yaml` reports no `warn` (a test exists and exercises the binaries), `tests/spread/integration/<pkg>/task.yaml` exists and passes (`spread lxd:tests/spread/integration/<pkg>`), and Step 10 surfaced no unresolved discrepancy. If the linter blocks, the test is missing or exercises no binaries, or tests fail, stop -- do not commit a `feat:` slice with lint blocks or without working tests.
+
+Commit in two steps (one category per commit): the `feat:` slice first, then the `test:` tests. Both must land before you stop.
+
+```bash
+git -C <repo> commit -m "feat(<pkg>): add <slice-list> slices"   # the SDF(s)
+git -C <repo> commit -m "test(<pkg>): add integration tests"     # the spread test(s)
+```
+
+Follow [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/): `feat:`, `fix:`, `test:`, `ci:`, `chore:`, `docs:`. Subject lowercase, imperative, <=50 chars, no trailing period. Body wrap 72.
+
+**Stop here. The user opens the PR themselves.**
+
+Reminder: all PRs must be forward-ported oldest -> newest across all maintained release branches. Note any required forward-ports in your final report.
 
 ---
 
