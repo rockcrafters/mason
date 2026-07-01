@@ -189,7 +189,7 @@ Start from a draft rather than a blank file:
 scripts/deb-list.py <package> --sdf > slices/<package>.yaml
 ```
 
-It groups the deb's files into `bins`/`libs`/`config`/`copyright`, drops clutter (man pages, completions, docs), globs multiarch lib dirs (`*-linux-*`), wires the `copyright` slice + global `essential`, and sorts contents -- so `check-slice.py` passes on it out of the box. Then do the judgement the draft can't: add each slice's cross-package `essential:` deps (from Step 3), place the `# unplaced` files into the right slice (`data`/`scripts`/`var`/...) or drop them, reproduce maintainer-script effects, and restructure into functional slices (`core`/`standard`/...) for complex packages. The target shape:
+It groups the deb's files into `bins`/`libs`/`config`/`headers`/`var`/`copyright`, drops clutter (man pages, completions, docs), globs multiarch lib dirs (`*-linux-*`), wires the `copyright` slice + global `essential` (handling shared-copyright doc-dir symlinks), and sorts contents -- so `check-slice.py` passes on it out of the box. Ambiguous `/usr/lib` and `/usr/share` files are left as `# unplaced` comments for you to place. Then do the judgement the draft can't: add each slice's cross-package `essential:` deps (from Step 3), place the `# unplaced` files into the right slice (`data`/`scripts`/`var`/...) or drop them, reproduce maintainer-script effects, and restructure into functional slices (`core`/`standard`/...) for complex packages. The target shape:
 
 ```yaml
 package: <package-name>
