@@ -205,7 +205,7 @@ When the deb already names `<pkg>-core` (e.g. `git-core`), keep the name verbati
 
 ## Exclude by Default
 
-A `.deb` ships files a minimal rootfs never needs. Do **not** slice these unless a concrete runtime need is proven -- reviewers reject them, and each has its own CI/eval gate:
+A `.deb` ships files a minimal rootfs never needs. Do **not** slice these unless a concrete runtime need is proven -- reviewers reject them, and `check-slice.py` (and the eval) flag them:
 
 | Excluded | Paths | Notes |
 |----------|-------|-------|

@@ -251,7 +251,7 @@ It reads `format:` from `./chisel.yaml` automatically (or pass `--format N` / `-
 13. **Annotate explicit symlinks** with comments: `/usr/bin/foo:  # Symlink to ../lib/foo/foo`.
 14. **yamllint gates** (`.github/yamllint.yaml`): 2-space indent, lines <= 100 chars, at most one consecutive blank line, comments aligned to content, at most one space inside `{ }`/`[ ]`.
 
-`check-slice.py` checks rules 1, 2, 5, 6, 11 mechanically, plus the Step 4 clutter exclusions, copyright presence, and the version-gated fields (`hint`/`prefer`/`v3-essential`/essential-as-map). Rules 3, 4, 7, 8, 9, 10, 12, 13, 14 it can't judge -- those are on you.
+`check-slice.py` checks rules 1, 2, 5, 6, 11 mechanically, plus the Step 4 clutter exclusions, copyright presence, the version-gated fields (`hint`/`prefer`/`v3-essential`/essential-as-map), and `hint:` length + style. Rules 3, 4, 7, 8, 9, 10, 12, 13, 14 it can't judge -- those are on you.
 
 ### Step 9: Test
 
