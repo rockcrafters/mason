@@ -10,4 +10,4 @@ node_modules/
 __pycache__/
 
 # pats run artifacts
-/tests/skill/.pats/
+/tests/skills/.pats/
