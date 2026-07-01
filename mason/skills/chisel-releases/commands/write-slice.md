@@ -284,24 +284,22 @@ For applications, CLI tools, servers, interpreters -- any package providing user
 3. Identify key functional areas. Each should have at least one test.
 4. Check runtime dependencies: does the software need `/etc/passwd`, `/tmp`, timezone data, locale data, etc.?
 
-**Write the test suite** at `tests/spread/integration/<package>/task.yaml`:
+**Write the test suite** at `tests/spread/integration/<package>/task.yaml`. Start from the scaffold rather than a blank file:
+
+```bash
+scripts/scaffold-test.py slices/<package>.yaml > tests/spread/integration/<package>/task.yaml
+```
+
+It emits one fresh rootfs per binary-bearing slice and a `chroot` line for every declared binary, so coverage is complete by construction. Then do the real work: replace each `--version` placeholder with a genuine functional check, add config/feature tests, and fill in the marker lines for any glob-matched binaries. The shape it produces:
 
 ```yaml
 summary: Integration tests for <package>
 
 execute: |
-  # Test 1: Basic invocation
+  # <package>_bins: fresh rootfs so a missing dep can't hide behind another test.
   rootfs="$(install-slices <package>_bins)"
-  chroot "${rootfs}/" <command> --version
-
-  # Test 2: Core functionality
+  chroot "$rootfs" <command> --version  # replace with a real functional check
   # (for curl: fetch a URL; for python3: import core modules; for vim: edit a file)
-
-  # Test 3: Configuration
-  # (verify config files are picked up)
-
-  # Test 4: Key features
-  # (test primary use cases)
 ```
 
 **Test design principles**:

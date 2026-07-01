@@ -133,6 +133,19 @@ def test_check_diff() -> None:
         assert "ok:" in out, out
 
 
+def test_scaffold_test() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        sdf = write(d, "foo.yaml", CLEAN)  # ships /usr/bin/foo in the bins slice.
+        out = run("scaffold-test.py", str(sdf))
+        assert "install-slices foo_bins" in out and 'chroot "$rootfs" foo' in out, out
+        # round-trip: the scaffold exercises every binary by construction, so
+        # check-test reports full coverage on it.
+        task = write(d, "task.yaml", out)
+        ct = run("check-test.py", str(sdf), str(task))
+        assert "ok:" in ct, ct
+
+
 def main() -> int:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
