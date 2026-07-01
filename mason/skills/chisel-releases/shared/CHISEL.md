@@ -70,7 +70,7 @@ Key fields: `format:` (gates available features), `archives.ubuntu.suites[0]` (c
 | `essential` | list of `<pkg>_<slice>` | Cross-package dependencies |
 | `contents` | map path -> entry options | Paths this slice installs. **Paths must be lexicographically sorted** |
 | `mutate` | string (Starlark) | Mutation script run after all slices installed |
-| `hint` | string, max 40 chars | v3+ only. Validated by `validate-hints` CI |
+| `hint` | string, <= 40 chars | v3+ only. Length + printable-chars enforced by chisel core (parse error since v1.4.0); the noun-phrase _style_ is checked by `validate-hints` CI. Shown in `chisel find`/`info` output |
 
 ### Content Path Entry Options
 
@@ -147,6 +147,7 @@ e.g. `hint: System log viewer` (not `hint: Views system logs`).
 chisel cut --release <ref> --root <dir> [--arch <a>] <pkg>_<slice> ...   # materialise rootfs
 chisel find <pattern>                                                     # search slices
 chisel info <pkg>_<slice>                                                 # inspect slice
+chisel debug check-release-archives --release <ref>                       # download all pkgs, report cross-package path conflicts
 ```
 
 `--release`: `ubuntu-XX.XX` (online branch), absolute path (local checkout), or omit (host `/etc/os-release`).
