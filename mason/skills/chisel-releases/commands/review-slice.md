@@ -23,9 +23,17 @@ Before reasoning about anything, run the bundled linter on every changed SDF:
 scripts/check-slice.py slices/<pkg>.yaml [slices/<pkg2>.yaml ...]
 ```
 
-It reads `format:` from `./chisel.yaml` (or pass `--branch ubuntu-XX.XX`). It deterministically checks the mechanical gates -- sorting, naming, absolute paths, copyright presence, clutter exclusion, arch formatting, and version-gated fields (`hint`/`prefer`/`v3-essential`/essential-as-map). Fold its output straight into your report: map `block` -> blocking, `warn` -> should-fix. Then spend your own judgement on what it can't check: dependency accuracy, test quality, design, and forward-porting.
+It reads `format:` from `./chisel.yaml` (or pass `--branch ubuntu-XX.XX`). It deterministically checks the mechanical gates -- sorting, naming, absolute paths, copyright presence, clutter exclusion, arch names, and version-gated fields (`hint`/`prefer`/`v3-essential`/essential-as-map). Then check test coverage:
 
-It does not cut a rootfs or run tests -- `chisel cut` (the `install-slices` CI check) and spread cover those.
+```bash
+scripts/check-test.py slices/<pkg>.yaml
+```
+
+which lists any binary the SDF ships but the spread test never exercises -- a top rejection reason.
+
+Fold both tools' output straight into your report: map `block` -> blocking, `warn` -> should-fix. Then spend your own judgement on what they can't check: dependency accuracy, test *depth*, design, and forward-porting.
+
+Neither cuts a rootfs or runs tests -- `chisel cut` (the `install-slices` CI check) and spread cover those.
 
 ---
 
@@ -110,7 +118,7 @@ Check `format:` in `chisel.yaml` on the target branch:
 
 ## Testing Requirements
 
-- **Every binary in a `bins` slice must be exercised** in spread tests. "Please test every binary being delivered" is a recurring rejection reason.
+- **Every binary in a `bins` slice must be exercised** in spread tests. "Please test every binary being delivered" is a recurring rejection reason. Check it deterministically: `scripts/check-test.py slices/<pkg>.yaml` lists any declared binary the test never touches.
 - **Untestable means unshippable.** Push to drop rather than ship untested.
 - **~80% coverage** is a soft target mentioned in PR coverage comments. Not a hard gate but actively watched.
 - **Functional slices need functional tests.** `--version` alone is insufficient for applications. Test actual functionality.
