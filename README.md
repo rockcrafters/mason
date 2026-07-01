@@ -48,13 +48,18 @@ mason/
     chisel-releases/               # a skill -- self-contained, copied verbatim on install
       SKILL.md                     # skill entry + command dispatch
       commands/
-        write-slice.md             # author + test + commit (10-step authoring workflow)
-        review-slice.md            # review checklist (CI checks, style, deps, rejection reasons)
+        write-slice.md             # author + scaffold tests + self-check + commit
+        review-slice.md            # review: deterministic first pass (scripts) + judgement
       shared/CHISEL.md             # shared reference (format, branch model, schema versions, sources of truth)
       scripts/
         orientation                # deterministic orientation: cwd, skill dir, target release + format
-        deb-list.py                # python script to inspect .deb contents before authoring
-        try-cut                    # bash script to test slices against the current checkout
+        deb-list.py                # inspect .deb contents (files, deps, maintainer scripts) before authoring
+        try-cut                    # test slices with chisel cut against the current checkout
+        scaffold-test.py           # emit a spread task.yaml skeleton (a rootfs per slice, every binary listed)
+        check-slice.py             # lint an SDF: sorting, naming, copyright, clutter, arch, version-gated fields
+        check-test.py              # report binary test coverage for a slice
+        check-diff.py              # append-only regressions (removed SDF / slice / path) vs a base ref
+        review-diff.py             # run the three checks over a PR diff -> report + verdict + exit code
       schemas/commands.manifest.yaml  # command index (command -> file)
   .claude-plugin/                  # claude code plugin manifest
 scripts/cli.js                     # the npx installer (installs every skill under mason/skills/)

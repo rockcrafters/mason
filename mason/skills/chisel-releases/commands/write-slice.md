@@ -146,7 +146,7 @@ Use the source to:
 Before designing new slices, study existing SDFs on the target branch.
 
 1. **Read representative SDFs** for similar packages. Use `slices/bash.yaml`, `slices/base-files.yaml`, `slices/openssl.yaml`, `slices/dpkg.yaml` as references.
-2. **Follow naming conventions** from `shared/CHISEL.md` (Canonical Slice Names table). Use `libs` never `lib`, `bins` never `bin`, etc.
+2. **Follow naming conventions** from `shared/CHISEL.md` (Canonical Slice Names table). Use `libs` not `lib`, `bins` not `bin` (the table notes the rare `base-files`-style exceptions).
 3. **Check shared dependencies.** If the target package depends on packages with multiple slices (e.g. `libc6_libs`, `libc6_config`), determine which _specific_ slice is needed. Do not over-depend.
 4. **Verify no path conflicts.** Multiple slices from different packages can declare the same path ONLY if:
    - Both slices are in the same package, OR
