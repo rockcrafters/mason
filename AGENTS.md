@@ -13,13 +13,14 @@ working on [`canonical/chisel-releases`](https://github.com/canonical/chisel-rel
 
 @./mason/skills/chisel-releases/SKILL.md
 
-self-contained under `./mason/skills/chisel-releases/`: `commands/`, shared reference `shared/CHISEL.md`, helpers `scripts/` (`orientation`, `deb-list.py`, `try-cut`, `check-slice.py`, `check-test.py`), command index `schemas/commands.manifest.yaml`. paths inside command files are relative to the skill's own directory (or, for repo paths like `slices/`, to the chisel-releases checkout being worked on).
+self-contained under `./mason/skills/chisel-releases/`: `commands/`, shared reference `shared/CHISEL.md`, helpers `scripts/` (`orientation`, `deb-list.py`, `try-cut`, `check-slice.py`, `check-test.py`, `check-diff.py`), command index `schemas/commands.manifest.yaml`. paths inside command files are relative to the skill's own directory (or, for repo paths like `slices/`, to the chisel-releases checkout being worked on).
 
-two deterministic checkers are the backbone, so the commands don't rely on the agent remembering conventions:
+three deterministic checkers are the backbone, so the commands don't rely on the agent remembering conventions:
 - `check-slice.py` -- static SDF linter: sorting, naming, absolute paths, copyright presence, clutter exclusion, arch names, version-gated fields.
 - `check-test.py` -- reports any binary an SDF ships that its spread test never exercises (a top rejection reason).
+- `check-diff.py` -- append-only regressions between two SDF versions (removed SDF / slice / path), the `removed-slices` CI gate; works file-pair or `--base <ref>` via git.
 
-`write-slice` self-checks with both before commit; `review-slice` runs them as its first pass; together they're the intended engine for a future chisel-releases PR-review bot. rule sets are kept in sync with the eval scorers under `tests/scorers/` (shared vocab like the canonical slice-name set lives in both).
+`write-slice` self-checks with these before commit; `review-slice` runs them as its first pass; together they're the intended engine for a future chisel-releases PR-review bot. static-check rule sets are kept in sync with the eval scorers under `tests/scorers/` (shared vocab like the canonical slice-name set lives in both).
 
 ## install
 

@@ -31,9 +31,17 @@ scripts/check-test.py slices/<pkg>.yaml
 
 which lists any binary the SDF ships but the spread test never exercises -- a top rejection reason.
 
-Fold both tools' output straight into your report: map `block` -> blocking, `warn` -> should-fix. Then spend your own judgement on what they can't check: dependency accuracy, test *depth*, design, and forward-porting.
+When reviewing a diff or PR, also check for append-only regressions against the branch it targets:
 
-Neither cuts a rootfs or runs tests -- `chisel cut` (the `install-slices` CI check) and spread cover those.
+```bash
+scripts/check-diff.py --base <target-branch>
+```
+
+which flags any removed SDF, removed slice, or path dropped from a published slice -- the `removed-slices` CI gate fails on these unless the package genuinely left the archive.
+
+Fold all three tools' output straight into your report: map `block` -> blocking, `warn` -> should-fix. Then spend your own judgement on what they can't check: dependency accuracy, test *depth*, design, and forward-porting.
+
+None cut a rootfs or run tests -- `chisel cut` (the `install-slices` CI check) and spread cover those.
 
 ---
 
@@ -67,7 +75,7 @@ All checks must be green before review. `pkg-deps` is non-blocking but reviewers
 
 ## Append-Only Principle
 
-Published slices are **append-only in spirit**. Removing files from an existing slice is a regression for downstream consumers. If a slimmer variant is needed, create a new slice (`core`, `minimal`, or a more specific name) rather than removing from an existing one.
+Published slices are **append-only in spirit**. Removing files from an existing slice is a regression for downstream consumers. If a slimmer variant is needed, create a new slice (`core`, `minimal`, or a more specific name) rather than removing from an existing one. `check-diff.py --base <target-branch>` catches these regressions deterministically.
 
 ## Naming Conventions
 

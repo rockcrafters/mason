@@ -27,7 +27,7 @@ read-only.
 
 - `commands/` -- command workflows: markdown to read and follow, not executable scripts
 - `shared/CHISEL.md` -- reference (format, branch model, schema versions, naming, sources of truth)
-- `scripts/` -- runnable helpers: `orientation`, `deb-list.py`, `try-cut`, `check-slice.py` (deterministic SDF linter), `check-test.py` (binary test-coverage check)
+- `scripts/` -- runnable helpers: `orientation`, `deb-list.py`, `try-cut`, `check-slice.py` (deterministic SDF linter), `check-test.py` (binary test-coverage check), `check-diff.py` (append-only regression check)
 - `schemas/commands.manifest.yaml` -- command index (name -> file)
 
 ## Orient first
