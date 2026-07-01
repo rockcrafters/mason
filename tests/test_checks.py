@@ -177,9 +177,14 @@ def test_robustness() -> None:
 
 def test_draft_sdf() -> None:
     import importlib.util
-    spec = importlib.util.spec_from_file_location("deblist", str(SCRIPTS / "deb-list.py"))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
+    # don't write __pycache__ into the installed skill's scripts dir.
+    prev, sys.dont_write_bytecode = sys.dont_write_bytecode, True
+    try:
+        spec = importlib.util.spec_from_file_location("deblist", str(SCRIPTS / "deb-list.py"))
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+    finally:
+        sys.dont_write_bytecode = prev
     entries = [
         ("/usr/bin/foo", "x", "0755", "root/root", None),
         ("/usr/lib/x86_64-linux-gnu/libfoo.so.1", "f", "0644", "root/root", None),
