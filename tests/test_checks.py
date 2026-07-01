@@ -146,6 +146,27 @@ def test_scaffold_test() -> None:
         assert "ok:" in ct, ct
 
 
+def test_draft_sdf() -> None:
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("deblist", str(SCRIPTS / "deb-list.py"))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    entries = [
+        ("/usr/bin/foo", "x", "0755", "root/root", None),
+        ("/usr/lib/x86_64-linux-gnu/libfoo.so.1", "f", "0644", "root/root", None),
+        ("/usr/share/man/man1/foo.1", "f", "0644", "root/root", None),   # clutter
+        ("/usr/share/doc/foo/copyright", "f", "0644", "root/root", None),
+    ]
+    sdf = m.build_sdf("foo", "libc6", entries)
+    assert "/usr/lib/*-linux-*/libfoo.so.1:" in sdf, sdf  # multiarch triple globbed
+    assert "/usr/share/man" not in sdf, sdf               # clutter dropped
+    # the draft is conformant by construction: check-slice passes on it.
+    with tempfile.TemporaryDirectory() as td:
+        p = write(Path(td), "foo.yaml", sdf)
+        out = run("check-slice.py", p, "--format", "3")
+        assert "ok:" in out, out
+
+
 def main() -> int:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
