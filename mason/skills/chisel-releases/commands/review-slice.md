@@ -25,7 +25,7 @@ scripts/review-diff.py --base <target-branch>
 
 It finds the changed SDFs and runs the three checkers over them, then prints findings grouped by severity plus a verdict, and exits non-zero if anything `block`s (the same command a CI PR-review job would call). The three it drives, also runnable on their own:
 
-- `scripts/check-slice.py slices/<pkg>.yaml` -- static conventions: sorting, naming, absolute paths, copyright presence, clutter exclusion, arch names, version-gated fields (`hint`/`prefer`/`v3-essential`/essential-as-map). Reads `format:` from `./chisel.yaml` (or pass `--branch ubuntu-XX.XX`).
+- `scripts/check-slice.py slices/<pkg>.yaml` -- static conventions: sorting, naming, absolute paths, copyright presence, clutter exclusion, arch names, version-gated fields (`hint`/`prefer`/`v3-essential`/essential-as-map), and `hint:` length + style (the chisel-core 40-char cap and the `validate-hints` phrasing rules). Reads `format:` from `./chisel.yaml` (or pass `--branch ubuntu-XX.XX`).
 - `scripts/check-test.py slices/<pkg>.yaml` -- test coverage: `warn` if there's no test or it exercises none of the binaries; `info` listing untested binaries under partial coverage (normal for suites and alternatives symlinks -- judge whether the gaps matter).
 - `scripts/check-diff.py --base <target-branch>` -- append-only regressions: any removed SDF, slice, or path (the `removed-slices` CI gate fails on these unless the package left the archive).
 
