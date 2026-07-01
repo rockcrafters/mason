@@ -5,9 +5,9 @@
 # PATS_WORKDIR (agent cwd) and PATS_OUTPUT_DIR are set by pats.
 set -euo pipefail
 
-_here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" # tests/tasks
-_repo_root="$(cd "$_here/../.." && pwd)"              # mason repo root (cli.js)
-_cases_dir="$_here/../cases"                          # tests/cases
+_here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" # tests/skill/tasks
+_repo_root="$(cd "$_here/../../.." && pwd)"           # mason repo root (cli.js)
+_cases_dir="$_here/../cases"                          # tests/skill/cases
 
 # _clone: chisel-releases@$BRANCH into the workdir (the agent's cwd), record the
 # branch so format-version scorers can gate on it.

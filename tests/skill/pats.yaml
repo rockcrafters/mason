@@ -1,9 +1,9 @@
 # mason eval via pats (https://github.com/lczyk/pats).
-# run:   cd tests && pats run        # runs the agent(s) in docker -- slow, live
-# score: cd tests && pats score      # scores the latest run, offline
+# run:   cd tests/skill && pats run        # runs the agent(s) in docker -- slow, live
+# score: cd tests/skill && pats score      # scores the latest run, offline
 #
 # build the sandbox image first (pats image not published yet):
-#   docker build -t mason-test/sandbox:26.04 tests/
+#   docker build -t mason-test/sandbox:26.04 tests/skill/
 
 sandboxes:
   # github.com / raw.githubusercontent.com / codeload.github.com are deliberately

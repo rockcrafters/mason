@@ -1,16 +1,11 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.10"
-# dependencies = ["pyyaml"]
-# ///
-"""regression net for the skill's deterministic checkers.
+"""pytest regression net for the skill's deterministic checkers.
 
-exercises scripts/check-slice.py, check-test.py, check-diff.py on inline
-fixtures and asserts on their findings, so a change that breaks a check fails
-loudly. assert-based, no framework. run:  uv run tests/test_checks.py
+Exercises the scripts under mason/skills/chisel-releases/scripts/ on inline
+fixtures via subprocess, so this tests the real CLI, not imported internals. The
+subprocessed scripts need pyyaml, which must be present under the runner's
+interpreter. Run:
 
-each checker is invoked as a subprocess via the current interpreter (which, under
-uv run, has pyyaml) -- so this tests the real CLI, not imported internals.
+    uv run --with pyyaml --with pytest pytest tests/scripts/
 """
 from __future__ import annotations
 
@@ -19,7 +14,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-SCRIPTS = Path(__file__).resolve().parent.parent / "mason/skills/chisel-releases/scripts"
+SCRIPTS = Path(__file__).resolve().parents[2] / "mason/skills/chisel-releases/scripts"
 
 
 def run(script: str, *args: str) -> str:
@@ -213,16 +208,3 @@ def test_draft_sdf() -> None:
     ])
     assert "/usr/share/doc/libgcc-s1:" in shared, shared
     assert "/usr/share/doc/libgcc-s1/copyright" not in shared, shared
-
-
-def main() -> int:
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-            print(f"pass  {name}")
-    print("all checks pass")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
