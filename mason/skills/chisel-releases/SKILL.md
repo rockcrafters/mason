@@ -33,10 +33,11 @@ read-only.
 ## Orient first
 
 Before anything else, run `scripts/orientation [<package>]`. It prints --
-deterministically -- your working dir, this skill's own dir, and the target
-release + manifest format parsed from `chisel.yaml`. Treat its output as ground
-truth; don't infer any of it. Then read `shared/CHISEL.md` for format and
-conventions.
+deterministically -- your working dir, this skill's own dir, the target release
++ manifest format parsed from `chisel.yaml`, and which tools are available here
+(`chisel`, `dpkg-deb`, `spread`, `uv`, ...) so you know upfront what you can run.
+Treat its output as ground truth; don't infer any of it. Then read
+`shared/CHISEL.md` for format and conventions.
 
 ## Commands
 
