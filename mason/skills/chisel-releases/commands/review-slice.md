@@ -121,7 +121,7 @@ Check `format:` in `chisel.yaml` on the target branch:
 - `hint:` is **v3+ only**. Reject if used on v1/v2 branches.
 - `prefer:` is **v2+ only**. Reject if used on v1 branches.
 - `essential:`-as-map is **v3+ only**. On v1/v2 `essential:` must be a flat string list.
-- `v3-essential:` is the **v2 backport** for arch-gated essentials. On v3, use `essential:`-as-map instead; v1 has no arch gating.
+- `v3-essential:` is the **pre-v3 backport** for arch-gated essentials (v1/v2, needs chisel >= 1.3.0). On v3 it's obsolete -- use `essential:`-as-map instead.
 - `pro:` under `archives:` is v2+ unified. v1 uses separate `v2-archives:` block.
 
 ## Testing Requirements

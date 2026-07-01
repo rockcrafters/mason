@@ -107,8 +107,7 @@ Key fields: `format:` (gates available features), `archives.ubuntu.suites[0]` (c
 
 Some deps only apply on certain arches. How you express that depends on `format:`:
 
-- **v1** -- no arch gating. `essential:` is a flat string list; that's all v1 has.
-- **v2** -- backport via a parallel `v3-essential:` map alongside the flat `essential:` list:
+- **v1 / v2** -- backport via a parallel `v3-essential:` map alongside the flat `essential:` list (needs chisel >= 1.3.0):
 
   ```yaml
   v3-essential:
