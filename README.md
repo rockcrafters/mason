@@ -53,7 +53,7 @@ mason/
       shared/CHISEL.md             # shared reference (format, branch model, schema versions, sources of truth)
       scripts/
         orientation                # deterministic orientation: cwd, skill dir, target release + format
-        deb-list.py                # inspect .deb contents (files, deps, maintainer scripts) before authoring
+        deb-list.py                # inspect .deb contents (files, deps, maintainer scripts); --sdf emits a draft SDF
         try-cut                    # test slices with chisel cut against the current checkout
         scaffold-test.py           # emit a spread task.yaml skeleton (a rootfs per slice, every binary listed)
         check-slice.py             # lint an SDF: sorting, naming, copyright, clutter, arch, version-gated fields
