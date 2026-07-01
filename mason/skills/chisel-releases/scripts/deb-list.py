@@ -2,11 +2,16 @@
 """
 List files and maintainer scripts inside a debian package to aid chisel slice authoring.
 
-Usage: deb-list.py <package> [arch] [--scripts]
+Usage: deb-list.py <package> [arch] [--scripts] [--sdf]
   package    debian package name (e.g. bash, libssl3)
   arch       target architecture (default: host arch; fallback amd64)
              valid values: amd64 arm64 armhf i386 ppc64el riscv64 s390x
   --scripts  print full bodies of all present maintainer scripts
+  --sdf      instead of the listing, print a DRAFT slice definition file:
+             files grouped into bins/libs/config/copyright, clutter dropped,
+             multiarch lib dirs globbed, copyright wired, contents sorted.
+             a starting point -- the author still adds cross-package
+             essentials, places unplaced files, and refines the grouping.
 
 Default output:
   - package header (name, version, arch)
@@ -198,10 +203,96 @@ def deb_maintainer_scripts(deb_path, workdir):
     return scripts
 
 
+# --- draft SDF generation (--sdf) --------------------------------------------
+
+BIN_DIRS = ("/usr/bin/", "/usr/sbin/", "/bin/", "/sbin/", "/usr/libexec/")
+_CLUTTER = ("/usr/share/man/", "/usr/man/", "/usr/share/bash-completion/",
+            "/usr/share/fish/", "/usr/share/zsh/", "/etc/bash_completion.d/",
+            "/usr/share/doc-base/", "/usr/share/lintian/")
+_LEGAL = {"copyright", "notice", "license", "licence", "copying", "authors"}
+# a multiarch lib dir, e.g. /usr/lib/x86_64-linux-gnu/ -> globbed to *-linux-*.
+_TRIPLE = re.compile(r"^(/usr)?/lib(32|64|x32)?/[a-z0-9_]+-linux-[a-z0-9]+/")
+
+
+def _is_legal_doc(base):
+    stem = base
+    for suf in (".gz", ".xz", ".bz2", ".txt", ".md", ".rst"):
+        if stem.lower().endswith(suf):
+            stem = stem[: -len(suf)]
+    return stem.lower() in _LEGAL
+
+
+def classify(path, tag):
+    """Bucket a deb path into a draft slice, or None to drop as clutter."""
+    if any(path.startswith(c) for c in _CLUTTER):
+        return None
+    if path.startswith("/usr/share/doc/"):
+        return "copyright" if _is_legal_doc(path.rstrip("/").rsplit("/", 1)[-1]) else None
+    if tag == "x" and any(path.startswith(d) for d in BIN_DIRS):
+        return "bins"
+    base = path.rsplit("/", 1)[-1]
+    if (".so." in base or base.endswith(".so")) and (path.startswith("/usr/lib") or path.startswith("/lib")):
+        return "libs"
+    if path.startswith("/etc/"):
+        return "config"
+    return "unplaced"
+
+
+def _glob_triple(path):
+    return _TRIPLE.sub("/usr/lib/*-linux-*/", path)
+
+
+def build_sdf(pkg, depends, entries):
+    """Group deb contents into a draft SDF. Deterministic starting point; the
+    author still wires cross-package essentials and refines the grouping."""
+    buckets = {"bins": [], "libs": [], "config": [], "copyright": [], "unplaced": []}
+    for path, tag, _perms, _owner, _sym in entries:
+        b = classify(path, tag)
+        if b is None:
+            continue
+        buckets[b].append(_glob_triple(path) if b == "libs" else path)
+    buckets["copyright"].append(f"/usr/share/doc/{pkg}/copyright")
+
+    out = [f"package: {pkg}", ""]
+    out += [
+        "# DRAFT from deb-list.py --sdf -- a starting point, not a finished SDF.",
+        "# Before use: add each slice's essential: cross-package deps (this deb's",
+        f"#   Depends: {depends or '(none)'}),",
+        "#   place any unplaced files below, reproduce maintainer-script effects,",
+        "#   then run check-slice.py on the result.",
+        "",
+        "essential:",
+        f"  - {pkg}_copyright",
+        "",
+        "slices:",
+    ]
+    for name in ("bins", "libs", "config"):
+        paths = sorted(set(buckets[name]))
+        if not paths:
+            continue
+        out.append(f"  {name}:")
+        # dep hint as a comment, not an empty `essential:` key -- a null essential
+        # is a chisel parse error, and the draft must stay chisel-valid.
+        out.append("    # essential: add this slice's cross-package deps (see Depends above)")
+        out.append("    contents:")
+        out += [f"      {p}:" for p in paths]
+        out.append("")
+    out.append("  copyright:")
+    out.append("    contents:")
+    out += [f"      {p}:" for p in sorted(set(buckets["copyright"]))]
+    out.append("")
+    unplaced = sorted(set(buckets["unplaced"]))
+    if unplaced:
+        out.append("# unplaced -- slot each into a slice (data/scripts/var/...) or drop as clutter:")
+        out += [f"#   {p}" for p in unplaced]
+    return "\n".join(out)
+
+
 def main():
     args = sys.argv[1:]
     show_scripts = "--scripts" in args
-    args = [a for a in args if a != "--scripts"]
+    emit_sdf = "--sdf" in args
+    args = [a for a in args if a not in ("--scripts", "--sdf")]
 
     if not args:
         print("usage: deb-list.py <package> [arch] [--scripts]", file=sys.stderr)
@@ -225,6 +316,10 @@ def main():
 
         version = deb_field(deb, "Version")
         depends  = deb_field(deb, "Depends")
+
+        if emit_sdf:
+            print(build_sdf(pkg, depends, deb_contents(deb)))
+            return
 
         print(f"package: {pkg}  version: {version}  arch: {arch}\n")
 
