@@ -7,6 +7,7 @@
 
 node_modules/
 .DS_Store
+__pycache__/
 
 # pats run artifacts
 /tests/.pats/
