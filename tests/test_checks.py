@@ -88,6 +88,15 @@ def test_check_slice() -> None:
         out = run("check-slice.py", write(d, "bar.yaml", CLEAN), "--format", "3")
         assert "!= filename stem" in out, out
 
+        # hint validation (v3): a good hint is clean; length/style are checked.
+        def hint_sdf(h):
+            return f'package: foo\nessential:\n  - foo_copyright\nslices:\n  bins:\n    hint: {h}\n    contents:\n      /usr/bin/foo:\n  copyright:\n    contents:\n      /usr/share/doc/foo/copyright:\n'
+        out = run("check-slice.py", write(d, "foo.yaml", hint_sdf("System log viewer")), "--format", "3")
+        assert "hint" not in out, out  # valid hint, no findings
+        out = run("check-slice.py", write(d, "foo.yaml", hint_sdf("The tool that manages absolutely everything here.")), "--format", "3")
+        assert "caps it at 40" in out, out            # length is a parse-error block
+        assert "start with an article" in out, out    # style warn
+
         # v3-essential is a v1/v2 backport, obsolete on v3.
         v3e = "package: foo\nslices:\n  bins:\n    v3-essential:\n      libc6_libs: {arch: [amd64]}\n    contents:\n      /usr/bin/foo:\n  copyright:\n    contents:\n      /usr/share/doc/foo/copyright:\n"
         out = run("check-slice.py", write(d, "foo.yaml", v3e), "--format", "3")
