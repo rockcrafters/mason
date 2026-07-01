@@ -9,7 +9,7 @@ from _lib import *  # noqa: F403
 def score() -> float:
     def f(t: str) -> float:
         doc = produced(t)
-        if not isinstance(doc, dict):
+        if not has_slices(doc):
             return 0.0
         total = bad = 0
         for _, _, entry in iter_contents(doc):

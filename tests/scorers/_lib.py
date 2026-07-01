@@ -30,7 +30,7 @@ __all__ = [
     "OUT", "TASK", "NA", "emit", "avg", "produced", "expected",
     "fmt", "iter_contents", "iter_bodies", "mutate_map",
     "mutate_paths", "content_paths", "declared_binaries", "path_penalty",
-    "targets", "fmt_compat", "CANONICAL",
+    "targets", "fmt_compat", "CANONICAL", "has_slices",
 ]
 
 OUT = Path(os.environ["PATS_OUTPUT_DIR"])
@@ -147,6 +147,13 @@ def content_paths(doc: Any) -> set[str]:
     return {str(p).lower() for _, p, _ in iter_contents(doc)}
 
 
+def has_slices(doc: Any) -> bool:
+    """doc has a non-empty slices: dict -- i.e. is shaped like a real SDF, not
+    some other invented schema. compliance scorers (no forbidden path, sorted
+    keys, ...) gate on this: absence of slices is not evidence of compliance."""
+    return isinstance(doc, dict) and isinstance(doc.get("slices"), dict) and bool(doc["slices"])
+
+
 def declared_binaries(doc: Any) -> set[str]:
     out: set[str] = set()
     for _, path, _ in iter_contents(doc):
@@ -161,7 +168,7 @@ def declared_binaries(doc: Any) -> set[str]:
 def path_penalty(matches: Callable[[str], bool], allow: Callable[[str, Any], bool] = lambda p, d: False) -> Callable[[str], float]:
     def f(t: str) -> float:
         doc = produced(t)
-        if not isinstance(doc, dict):
+        if not has_slices(doc):
             return 0.0
         total = bad = 0
         for _, path, _ in iter_contents(doc):

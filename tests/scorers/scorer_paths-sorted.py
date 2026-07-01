@@ -9,11 +9,9 @@ from _lib import *  # noqa: F403
 def score() -> float:
     def f(t: str) -> float:
         doc = produced(t)
-        if not isinstance(doc, dict):
+        if not has_slices(doc):
             return 0.0
-        slices = doc.get("slices")
-        if not isinstance(slices, dict):
-            return 1.0
+        slices = doc["slices"]
         for body in slices.values():
             if not isinstance(body, dict):
                 continue

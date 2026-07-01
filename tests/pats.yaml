@@ -48,10 +48,36 @@ agents:
     sandbox: docker-mason-test
     model: claude-haiku-4-5-20251001
     effort: low
-  - id: gemini
+  # gemini-2.5-flash-lite benched too weak for this skill: broke tool-call
+  # namespacing (`default_api.skill`), dumped pseudocode as plain text instead
+  # of calling tools, and fabricated done-state (claimed files written/committed
+  # that don't exist in output). see .pats/runs/20260630-012.
+  # - id: gemini
+  #   kind: opencode-openrouter
+  #   sandbox: docker-mason-test-oc
+  #   model: google/gemini-2.5-flash-lite
+  - id: gpt-mini
     kind: opencode-openrouter
     sandbox: docker-mason-test-oc
-    model: google/gemini-2.5-flash-lite
+    model: openai/gpt-4o-mini
+  # cheap-but-stronger rung, all via openrouter+opencode -- coder-tuned, gpt-5
+  # lineage, deepseek-v3 family, GLM, picked from a live openrouter pricing pull.
+  - id: qwen3-coder-flash
+    kind: opencode-openrouter
+    sandbox: docker-mason-test-oc
+    model: qwen/qwen3-coder-flash
+  - id: gpt-5-mini
+    kind: opencode-openrouter
+    sandbox: docker-mason-test-oc
+    model: openai/gpt-5-mini
+  - id: deepseek-v3
+    kind: opencode-openrouter
+    sandbox: docker-mason-test-oc
+    model: deepseek/deepseek-chat-v3.1
+  - id: glm-4.6
+    kind: opencode-openrouter
+    sandbox: docker-mason-test-oc
+    model: z-ai/glm-4.6
 
 # knockout: prepare deletes the real slice (snapshotting it as ground truth);
 # the agent must reproduce it. collect gathers what the agent wrote.
@@ -131,6 +157,7 @@ scorers:
   - {id: slice-names-canonical,       score: "scorers/scorer_${id}.py"}
   - {id: structural-distance,         score: "scorers/scorer_${id}.py"}
   - {id: chisel-cut,                  score: "scorers/scorer_${id}.py"}
+  - {id: orientation-called,          score: "scorers/scorer_${id}.py"}
   - {id: spread-test-present,         score: "scorers/scorer_${id}.py"}
   - {id: spread-exercises-binaries,   score: "scorers/scorer_${id}.py"}
   - {id: v3-essential-format-compat,  score: "scorers/scorer_${id}.py"}
@@ -140,7 +167,7 @@ scorers:
   - {id: essential-list-on-v1,        score: "scorers/scorer_${id}.py"}
 
 test-matrix:
-  - agent: [haiku, gemini]
+  - agent: [haiku, gpt-mini, qwen3-coder-flash, gpt-5-mini, deepseek-v3, glm-4.6]
     task: "*"
 
 scorer-matrix:

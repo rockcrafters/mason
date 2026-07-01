@@ -8,10 +8,13 @@ from _lib import *  # noqa: F403
 
 def score() -> float:
     bins: set[str] = set()
+    well_formed = True
     for t in targets():
-        bins |= declared_binaries(produced(t))
+        doc = produced(t)
+        well_formed = well_formed and has_slices(doc)
+        bins |= declared_binaries(doc)
     if not bins:
-        return 1.0
+        return 1.0 if well_formed else 0.0
     bundle_path = OUT / f"{TASK}.spread.txt"
     bundle = bundle_path.read_text(encoding="utf-8") if bundle_path.exists() else ""
     if not bundle:

@@ -9,7 +9,7 @@ from _lib import *  # noqa: F403
 def score() -> float:
     def f(t: str) -> float:
         p = OUT / f"{t}.yaml"
-        if not p.exists():
+        if not has_slices(produced(t)):
             return 0.0
         bad = total = 0
         for raw in p.read_text(encoding="utf-8").splitlines():
