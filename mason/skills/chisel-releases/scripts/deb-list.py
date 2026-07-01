@@ -191,7 +191,7 @@ def deb_contents(deb_path):
 def deb_maintainer_scripts(deb_path, workdir):
     """
     Extracts the control tarball and returns a dict of script_name -> text
-    for whichever of preinst/postinst/prerm/postrm are present.
+    for whichever of preinst/postinst are present.
     """
     ctrl_dir = Path(workdir) / "ctrl"
     ctrl_dir.mkdir()
