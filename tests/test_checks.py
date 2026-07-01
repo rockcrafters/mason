@@ -154,17 +154,31 @@ def test_draft_sdf() -> None:
     entries = [
         ("/usr/bin/foo", "x", "0755", "root/root", None),
         ("/usr/lib/x86_64-linux-gnu/libfoo.so.1", "f", "0644", "root/root", None),
+        ("/usr/include/foo.h", "f", "0644", "root/root", None),          # headers
+        ("/var/lib/foo/state", "f", "0644", "root/root", None),          # var
         ("/usr/share/man/man1/foo.1", "f", "0644", "root/root", None),   # clutter
         ("/usr/share/doc/foo/copyright", "f", "0644", "root/root", None),
     ]
     sdf = m.build_sdf("foo", "libc6", entries)
     assert "/usr/lib/*-linux-*/libfoo.so.1:" in sdf, sdf  # multiarch triple globbed
     assert "/usr/share/man" not in sdf, sdf               # clutter dropped
+    assert "headers:" in sdf and "/usr/include/foo.h:" in sdf, sdf
+    assert "var:" in sdf and "/var/lib/foo/state:" in sdf, sdf
     # the draft is conformant by construction: check-slice passes on it.
     with tempfile.TemporaryDirectory() as td:
         p = write(Path(td), "foo.yaml", sdf)
         out = run("check-slice.py", p, "--format", "3")
         assert "ok:" in out, out
+
+    # shared-copyright package: ships /usr/share/doc/<pkg> as a symlink, no
+    # copyright file. the doc dir must go in copyright, not be dropped, and no
+    # bogus /usr/share/doc/<pkg>/copyright path should be invented.
+    shared = m.build_sdf("libgcc-s1", "gcc-base", [
+        ("/usr/lib/x86_64-linux-gnu/libgcc_s.so.1", "f", "0644", "root/root", None),
+        ("/usr/share/doc/libgcc-s1", "l", "0777", "root/root", "gcc-base"),
+    ])
+    assert "/usr/share/doc/libgcc-s1:" in shared, shared
+    assert "/usr/share/doc/libgcc-s1/copyright" not in shared, shared
 
 
 def main() -> int:
