@@ -19,8 +19,9 @@ three deterministic checkers are the backbone, so the commands don't rely on the
 - `check-slice.py` -- static SDF linter: sorting, naming, absolute paths, copyright presence, clutter exclusion, arch names, version-gated fields.
 - `check-test.py` -- reports any binary an SDF ships that its spread test never exercises (a top rejection reason).
 - `check-diff.py` -- append-only regressions between two SDF versions (removed SDF / slice / path), the `removed-slices` CI gate; works file-pair or `--base <ref>` via git.
+- `review-diff.py --base <ref>` -- the assembled entrypoint: finds the changed SDFs in a diff, runs the three checkers over them, prints findings by severity with a verdict, exits non-zero on any `block`. this is the CI-callable PR-review bot; it needs no agent.
 
-`write-slice` self-checks with these before commit; `review-slice` runs them as its first pass; together they're the intended engine for a future chisel-releases PR-review bot. static-check rule sets are kept in sync with the eval scorers under `tests/scorers/` (shared vocab like the canonical slice-name set lives in both). the checkers have their own regression net at `tests/test_checks.py` (assert-based, run with `uv run tests/test_checks.py`); the checkers are load-bearing, so keep it green when editing them.
+`write-slice` self-checks with the three checkers before commit; `review-slice` leads with `review-diff.py`; together they're the engine for a future chisel-releases PR-review bot. static-check rule sets are kept in sync with the eval scorers under `tests/scorers/` (shared vocab like the canonical slice-name set lives in both). the checkers have their own regression net at `tests/test_checks.py` (assert-based, run with `uv run tests/test_checks.py`); they're load-bearing, so keep it green when editing them. all checkers stay empirically clean against the real merged corpus on `ubuntu-24.04` (v1) and `ubuntu-26.04` (v3) -- 0 false-positive blocks.
 
 ## install
 

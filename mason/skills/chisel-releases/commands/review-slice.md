@@ -17,29 +17,19 @@ You are read-only: inspect the diff / SDFs and return a review report. Do not ed
 
 ## Deterministic first pass
 
-Before reasoning about anything, run the bundled linter on every changed SDF:
+Before reasoning about anything, run the deterministic checks over the diff. When reviewing a PR or branch, one command does it all -- pass the branch the PR targets:
 
 ```bash
-scripts/check-slice.py slices/<pkg>.yaml [slices/<pkg2>.yaml ...]
+scripts/review-diff.py --base <target-branch>
 ```
 
-It reads `format:` from `./chisel.yaml` (or pass `--branch ubuntu-XX.XX`). It deterministically checks the mechanical gates -- sorting, naming, absolute paths, copyright presence, clutter exclusion, arch names, and version-gated fields (`hint`/`prefer`/`v3-essential`/essential-as-map). Then check test coverage:
+It finds the changed SDFs and runs the three checkers over them, then prints findings grouped by severity plus a verdict, and exits non-zero if anything `block`s (the same command a CI PR-review job would call). The three it drives, also runnable on their own:
 
-```bash
-scripts/check-test.py slices/<pkg>.yaml
-```
+- `scripts/check-slice.py slices/<pkg>.yaml` -- static conventions: sorting, naming, absolute paths, copyright presence, clutter exclusion, arch names, version-gated fields (`hint`/`prefer`/`v3-essential`/essential-as-map). Reads `format:` from `./chisel.yaml` (or pass `--branch ubuntu-XX.XX`).
+- `scripts/check-test.py slices/<pkg>.yaml` -- test coverage: `warn` if there's no test or it exercises none of the binaries; `info` listing untested binaries under partial coverage (normal for suites and alternatives symlinks -- judge whether the gaps matter).
+- `scripts/check-diff.py --base <target-branch>` -- append-only regressions: any removed SDF, slice, or path (the `removed-slices` CI gate fails on these unless the package left the archive).
 
-which reports test coverage: a `warn` if there's no test or it exercises none of the binaries, or an `info` listing untested binaries under partial coverage (normal for suites and alternatives symlinks -- judge whether the gaps matter).
-
-When reviewing a diff or PR, also check for append-only regressions against the branch it targets:
-
-```bash
-scripts/check-diff.py --base <target-branch>
-```
-
-which flags any removed SDF, removed slice, or path dropped from a published slice -- the `removed-slices` CI gate fails on these unless the package genuinely left the archive.
-
-Fold all three tools' output straight into your report: map `block` -> blocking, `warn` -> should-fix. Then spend your own judgement on what they can't check: dependency accuracy, test *depth*, design, and forward-porting.
+Fold the output straight into your report: map `block` -> blocking, `warn` -> should-fix, `info` -> judge. Then spend your own judgement on what they can't check: dependency accuracy, test *depth*, design, and forward-porting.
 
 None cut a rootfs or run tests -- `chisel cut` (the `install-slices` CI check) and spread cover those.
 
