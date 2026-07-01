@@ -11,7 +11,24 @@ mason_root="$(cd "$(dirname "$0")/.." && pwd)"
 echo "working dir (chisel-releases checkout): $(pwd)"
 echo "skill dir (read-only):                  $mason_root"
 echo "  reference: $mason_root/shared/CHISEL.md"
-echo "  helpers:   $mason_root/scripts/deb-list.py , $mason_root/scripts/try-cut"
+echo "  helpers:   $mason_root/scripts/ -- deb-list.py (--sdf drafts an SDF), scaffold-test.py,"
+echo "             check-slice.py, check-test.py, check-diff.py, review-diff.py, try-cut"
+
+# what can you actually run here? the scripts degrade, but knowing upfront saves
+# wasted attempts (e.g. no chisel -> skip try-cut, lean on the install-slices CI).
+echo "tools:"
+for t in chisel dpkg-deb spread uv python3 git; do
+    if command -v "$t" >/dev/null 2>&1; then avail="yes"; else avail="NO"; fi
+    case "$t" in
+        chisel)   use="try-cut / chisel cut";;
+        dpkg-deb) use="deb-list.py (inspect + --sdf)";;
+        spread)   use="integration tests";;
+        uv)       use="runs the check-*/scaffold scripts (or python3 + pyyaml)";;
+        python3)  use="deb-list.py, orientation";;
+        git)      use="check-diff.py / review-diff.py";;
+    esac
+    printf "  %-9s %-4s (%s)\n" "$t" "$avail" "$use"
+done
 
 if [ ! -f chisel.yaml ]; then
     echo "release: UNKNOWN -- no ./chisel.yaml here; cd into a chisel-releases checkout first"
