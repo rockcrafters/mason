@@ -88,10 +88,13 @@ def test_check_slice() -> None:
         out = run("check-slice.py", write(d, "bar.yaml", CLEAN), "--format", "3")
         assert "!= filename stem" in out, out
 
-        # v3-essential is a v2 backport, not v3.
+        # v3-essential is a v1/v2 backport, obsolete on v3.
         v3e = "package: foo\nslices:\n  bins:\n    v3-essential:\n      libc6_libs: {arch: [amd64]}\n    contents:\n      /usr/bin/foo:\n  copyright:\n    contents:\n      /usr/share/doc/foo/copyright:\n"
         out = run("check-slice.py", write(d, "foo.yaml", v3e), "--format", "3")
-        assert "v3-essential is a v2 backport" in out, out
+        assert "v3-essential is obsolete on v3" in out, out
+        # ...but fine on v1 (no finding).
+        out = run("check-slice.py", write(d, "foo.yaml", v3e), "--format", "1")
+        assert "v3-essential" not in out, out
 
 
 def test_check_test() -> None:

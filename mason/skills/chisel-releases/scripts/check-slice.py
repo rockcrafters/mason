@@ -66,6 +66,21 @@ CLUTTER = {
     "doc-base/lintian metadata": ("/usr/share/doc-base/", "/usr/share/lintian/"),
 }
 
+# legal files that legitimately live under /usr/share/doc alongside copyright
+# (not clutter). basename stem, uppercased, after stripping a text/compress suffix.
+LEGAL_DOC = {
+    "COPYRIGHT", "NOTICE", "LICENSE", "LICENCE", "COPYING",
+    "AUTHORS", "THIRDPARTYNOTICES", "THIRD-PARTY-NOTICES",
+}
+
+
+def is_legal_doc(basename: str) -> bool:
+    stem = basename
+    for suf in (".gz", ".xz", ".bz2", ".txt", ".md", ".rst"):
+        if stem.lower().endswith(suf):
+            stem = stem[: -len(suf)]
+    return stem.upper() in LEGAL_DOC
+
 
 class Findings:
     def __init__(self, file: str) -> None:
@@ -126,14 +141,17 @@ def check_slices(doc: Any, fmt: int | None, f: Findings) -> None:
         return
     pkg = doc.get("package") if isinstance(doc.get("package"), str) else ""
 
-    # copyright is mandatory.
+    # copyright: a strong convention, not a CI parse/lint gate (some merged
+    # library SDFs skip it), so warn. it ships either the copyright file
+    # directly, or the doc dir as a symlink to another package's (shared).
     cp = slices.get("copyright")
     if not isinstance(cp, dict):
-        f.block("slices:", "no copyright slice (every SDF must ship one)")
-    else:
+        f.warn("slices:", "no copyright slice -- reviewers expect every SDF to ship one")
+    elif pkg:
         contents = cp.get("contents") if isinstance(cp.get("contents"), dict) else {}
-        if pkg and f"/usr/share/doc/{pkg}/copyright" not in contents:
-            f.block("copyright", f"missing /usr/share/doc/{pkg}/copyright")
+        docdir = f"/usr/share/doc/{pkg}"
+        if not any(k in contents for k in (f"{docdir}/copyright", docdir, docdir + "/")):
+            f.warn("copyright", f"ships no copyright ({docdir}/copyright, or the doc dir as a shared-copyright symlink)")
     ess = doc.get("essential")
     if pkg and not (isinstance(ess, list) and f"{pkg}_copyright" in ess) \
             and not (isinstance(ess, dict) and f"{pkg}_copyright" in ess):
@@ -144,10 +162,10 @@ def check_slices(doc: Any, fmt: int | None, f: Findings) -> None:
             f.block(f"slices.{name}", "slice name must match ^[a-z][a-z0-9-]{2,}$")
         if not isinstance(body, dict):
             continue
-        check_slice_body(name, body, fmt, f)
+        check_slice_body(name, body, pkg, fmt, f)
 
 
-def check_slice_body(name: str, body: dict, fmt: int | None, f: Findings) -> None:
+def check_slice_body(name: str, body: dict, pkg: str, fmt: int | None, f: Findings) -> None:
     if name in BAD_SLICE_NAMES:
         f.warn(f"slices.{name}", f"use '{BAD_SLICE_NAMES[name]}' not '{name}'")
 
@@ -161,27 +179,27 @@ def check_slice_body(name: str, body: dict, fmt: int | None, f: Findings) -> Non
     if not is_sorted(keys):
         f.block(f"{name}.contents", "contents paths not sorted (bytewise/ASCII)")
     for path, entry in contents.items():
-        check_path(name, path, entry, fmt, f)
+        check_path(name, path, entry, pkg, fmt, f)
 
 
-def check_path(sname: str, path: Any, entry: Any, fmt: int | None, f: Findings) -> None:
+def check_path(sname: str, path: Any, entry: Any, pkg: str, fmt: int | None, f: Findings) -> None:
     if not isinstance(path, str) or not path.startswith("/"):
         f.block(f"{sname}: {path}", "path must be absolute (start with /)")
         return
     for label, prefixes in CLUTTER.items():
         if any(path.startswith(p) for p in prefixes):
             f.warn(f"{sname}: {path}", f"{label} not shipped in minimal rootfs")
-    if path.startswith("/usr/share/doc/") and not path.endswith("/copyright"):
-        f.warn(f"{sname}: {path}", "doc clutter: only the copyright file is shipped")
+    if path.startswith("/usr/share/doc/"):
+        docdir = f"/usr/share/doc/{pkg}"
+        base = path.rstrip("/").rsplit("/", 1)[-1]
+        # exempt the package's own doc dir (shared-copyright symlink) and legal files.
+        if pkg and path.rstrip("/") != docdir and not is_legal_doc(base):
+            f.warn(f"{sname}: {path}", "doc clutter: ship only the copyright/notice/licence files")
 
     if not isinstance(entry, dict):
         return
     if "prefer" in entry and (fmt is not None and fmt < 2):
         f.block(f"{sname}: {path}", f"prefer: is v2+ only (format is v{fmt})")
-    if entry.get("mutable") is True:
-        has = any(isinstance(entry.get(k), str) and entry.get(k) != "" for k in ("text", "symlink", "copy"))
-        if not has:
-            f.warn(f"{sname}: {path}", "mutable path needs text/symlink/copy (nothing to mutate otherwise)")
     arch = entry.get("arch")
     archs = [arch] if isinstance(arch, str) else arch if isinstance(arch, list) else None
     if archs is not None:
@@ -191,11 +209,12 @@ def check_path(sname: str, path: Any, entry: Any, fmt: int | None, f: Findings) 
 
 
 def check_v3_essential(doc: Any, fmt: int | None, f: Findings) -> None:
-    # v3-essential is a v2-only backport for arch-gated essentials; on v3 use
-    # essential-as-map, on v1 plain essential. (mirrors the eval's exact_ok=2.)
+    # v3-essential is the pre-v3 backport for arch-gated essentials (needs
+    # chisel>=1.3.0): valid on v1/v2, obsolete on v3 where essential-as-map is
+    # native. flag it only on v3.
     for name, body in slices_of(doc).items():
-        if isinstance(body, dict) and "v3-essential" in body and fmt is not None and fmt != 2:
-            f.block(f"{name}.v3-essential", f"v3-essential is a v2 backport field (format is v{fmt})")
+        if isinstance(body, dict) and "v3-essential" in body and fmt is not None and fmt >= 3:
+            f.warn(f"{name}.v3-essential", f"v3-essential is obsolete on v3 -- use essential-as-map (format is v{fmt})")
     if isinstance(doc.get("essential"), dict) and fmt is not None and fmt < 3:
         f.block("essential:", f"essential-as-map is v3+ only (format is v{fmt})")
     for name, body in slices_of(doc).items():
