@@ -322,17 +322,17 @@ execute: |
 
 Run with: `spread lxd:tests/spread/integration/<package>`
 
-Then verify coverage deterministically -- every binary the SDF ships must be exercised:
+Then check coverage deterministically:
 
 ```bash
 scripts/check-test.py slices/<package>.yaml
 ```
 
-It warns for any declared binary whose name never appears in the test. Fix each (add a real check, or at least a linker-resolves skeleton) before committing.
+It `warn`s when there's no test, or a test that exercises none of the binaries -- fix those before committing. It reports partial coverage as `info` with the list of untested binaries: review that list and add a check (or at least a linker-resolves skeleton) for each you reasonably can. Full coverage isn't demanded -- alternatives symlinks, multi-call binaries, and big suites are fine tested representatively.
 
 ### Step 10: Commit
 
-**Precondition:** `scripts/check-slice.py slices/<pkg>.yaml` reports no `block` findings, `scripts/check-test.py slices/<pkg>.yaml` reports no untested binaries, and `tests/spread/integration/<pkg>/task.yaml` exists and passes (`spread lxd:tests/spread/integration/<pkg>`). If the linter blocks, a binary is untested, or tests are missing or failing, stop -- do not commit a `feat:` slice with lint blocks or without working tests.
+**Precondition:** `scripts/check-slice.py slices/<pkg>.yaml` reports no `block` findings, `scripts/check-test.py slices/<pkg>.yaml` reports no `warn` (a test exists and exercises the binaries), and `tests/spread/integration/<pkg>/task.yaml` exists and passes (`spread lxd:tests/spread/integration/<pkg>`). If the linter blocks, the test is missing or exercises no binaries, or tests fail, stop -- do not commit a `feat:` slice with lint blocks or without working tests.
 
 Commit in two steps (one category per commit): the `feat:` slice first, then the `test:` tests. Both must land before you stop.
 

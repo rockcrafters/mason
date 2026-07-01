@@ -29,7 +29,7 @@ It reads `format:` from `./chisel.yaml` (or pass `--branch ubuntu-XX.XX`). It de
 scripts/check-test.py slices/<pkg>.yaml
 ```
 
-which lists any binary the SDF ships but the spread test never exercises -- a top rejection reason.
+which reports test coverage: a `warn` if there's no test or it exercises none of the binaries, or an `info` listing untested binaries under partial coverage (normal for suites and alternatives symlinks -- judge whether the gaps matter).
 
 When reviewing a diff or PR, also check for append-only regressions against the branch it targets:
 
@@ -126,7 +126,7 @@ Check `format:` in `chisel.yaml` on the target branch:
 
 ## Testing Requirements
 
-- **Every binary in a `bins` slice must be exercised** in spread tests. "Please test every binary being delivered" is a recurring rejection reason. Check it deterministically: `scripts/check-test.py slices/<pkg>.yaml` lists any declared binary the test never touches.
+- **Binaries in a `bins` slice should be exercised** in spread tests. "Please test every binary being delivered" is a recurring ask, though representative coverage is accepted for suites and alternatives symlinks. `scripts/check-test.py slices/<pkg>.yaml` reports the coverage and lists untested binaries -- flag a test that exercises none of them, and judge whether partial gaps matter.
 - **Untestable means unshippable.** Push to drop rather than ship untested.
 - **~80% coverage** is a soft target mentioned in PR coverage comments. Not a hard gate but actively watched.
 - **Functional slices need functional tests.** `--version` alone is insufficient for applications. Test actual functionality.
