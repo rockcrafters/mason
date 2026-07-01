@@ -15,7 +15,7 @@ You author slices against [`canonical/chisel-releases`](https://github.com/canon
 
 **Existing slices are append-only.** Only modify a published slice if strictly necessary (e.g. fixing a bug, adding a missing dependency, or accommodating an upstream packaging change). Never reorganise, rename, or remove paths from existing slices without a concrete reason -- downstream consumers depend on the current layout. When in doubt, create a new slice rather than changing an existing one.
 
-**Prerequisites**: run `${MASON_ROOT}/scripts/orientation <package>` first -- it reports your working dir, the skill dir, and the target release + manifest format (from `chisel.yaml`) deterministically. Then read `${MASON_ROOT}/shared/CHISEL.md` for chisel/SDF format reference, branch model, schema versions, and canonical naming conventions. This command focuses on the _workflow_ of writing slices.
+**Prerequisites**: run `scripts/orientation <package>` first -- it reports your working dir, the skill dir, and the target release + manifest format (from `chisel.yaml`) deterministically. Then read `shared/CHISEL.md` for chisel/SDF format reference, branch model, schema versions, and canonical naming conventions. This command focuses on the _workflow_ of writing slices.
 
 When this prompt and the repo disagree, trust the repo. Read `slices/bash.yaml` or `slices/base-files.yaml` on the target branch as canonical reference.
 
@@ -30,7 +30,7 @@ Follow these steps in order. Do NOT skip steps.
 1. **Confirm it is an Ubuntu package.** Chisel only supports packages from Ubuntu (and Ubuntu Pro) archives.
 2. **Identify the target Ubuntu release** (e.g. `ubuntu-24.04`). This determines which chisel-releases branch to target.
 3. **Check the branch is not EOL.** Read `chisel.yaml` on the target branch: `maintenance.end-of-life` must be in the future.
-4. **Check `format:` version** in `chisel.yaml`. This gates available features (see `${MASON_ROOT}/shared/CHISEL.md` schema versions table). Do not use v2+/v3+ features on older formats.
+4. **Check `format:` version** in `chisel.yaml`. This gates available features (see `shared/CHISEL.md` schema versions table). Do not use v2+/v3+ features on older formats.
 5. **Avoid duplicates.** Check `slices/<pkg>.yaml` does not already exist on the target branch. If it does, stop and report it.
 
 ### Step 2: Check Cross-Release Consistency
@@ -60,7 +60,7 @@ Before designing anything, check whether the package already has slices on **oth
 
    Note the structural decisions: slice names, grouping approach (by-type vs by-function), dependency choices, `mutate:` patterns. Carry these forward unless there is a concrete reason to diverge.
 
-4. **Compare `.deb` contents across releases.** Run `${MASON_ROOT}/scripts/deb-list.py` for the target release and for each release that already has an SDF. Look for cross-release differences (see `${MASON_ROOT}/shared/CHISEL.md` Cross-Release Differences table):
+4. **Compare `.deb` contents across releases.** Run `scripts/deb-list.py` for the target release and for each release that already has an SDF. Look for cross-release differences (see `shared/CHISEL.md` Cross-Release Differences table):
    - Path changes (usrmerge: `/bin/` -> `/usr/bin/`)
    - Library renames (t64 transition: `libssl3` -> `libssl3t64`)
    - New or removed files
@@ -80,7 +80,7 @@ If no existing SDFs are found on any branch, this is a net-new package -- procee
 
 Before inspecting or designing anything, build the complete dependency tree. Dependencies MUST be sliced before the target package.
 
-1. **Get the full recursive dependency list.** Use `apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances <package>` to resolve all transitive `Depends:`. Alternatively, run `${MASON_ROOT}/scripts/deb-list.py <package>` to get direct `Depends:` and recurse manually.
+1. **Get the full recursive dependency list.** Use `apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances <package>` to resolve all transitive `Depends:`. Alternatively, run `scripts/deb-list.py <package>` to get direct `Depends:` and recurse manually.
 2. **Check which dependencies already have slices** on the target chisel-releases branch (`ls slices/ | sed 's/\.yaml$//'` or `chisel info --release <release> <dep> ...`).
 3. **Identify unsliced dependencies.** Produce an ordered list of packages that need slicing, sorted **leaves-first** (packages with no unsliced dependencies come first).
 4. **Record the plan** in your final report: the full dependency tree, which deps already have slices, which need new slices, and the slicing order (leaves first). Then proceed.
@@ -94,7 +94,7 @@ Note: only `Depends:` matter. Not `Recommends:` or `Suggests:`. Including `Recom
 For EACH package that needs slicing (starting from leaf dependencies), inspect it using the bundled `deb-list.py` script:
 
 ```
-${MASON_ROOT}/scripts/deb-list.py <package> [arch] [--scripts]
+scripts/deb-list.py <package> [arch] [--scripts]
 ```
 
 This fetches the `.deb` straight from the ubuntu mirror (reading the suite from `chisel.yaml`) and prints:
@@ -145,7 +145,7 @@ Use the source to:
 Before designing new slices, study existing SDFs on the target branch.
 
 1. **Read representative SDFs** for similar packages. Use `slices/bash.yaml`, `slices/base-files.yaml`, `slices/openssl.yaml`, `slices/dpkg.yaml` as references.
-2. **Follow naming conventions** from `${MASON_ROOT}/shared/CHISEL.md` (Canonical Slice Names table). Use `libs` never `lib`, `bins` never `bin`, etc.
+2. **Follow naming conventions** from `shared/CHISEL.md` (Canonical Slice Names table). Use `libs` never `lib`, `bins` never `bin`, etc.
 3. **Check shared dependencies.** If the target package depends on packages with multiple slices (e.g. `libc6_libs`, `libc6_config`), determine which _specific_ slice is needed. Do not over-depend.
 4. **Verify no path conflicts.** Multiple slices from different packages can declare the same path ONLY if:
    - Both slices are in the same package, OR
@@ -160,7 +160,7 @@ Choose the approach that fits the package best.
 
 #### Approach A: Group by Type of Content
 
-Best for most packages. Group files by their type. See the Canonical Slice Names table in `${MASON_ROOT}/shared/CHISEL.md`.
+Best for most packages. Group files by their type. See the Canonical Slice Names table in `shared/CHISEL.md`.
 
 Typical structure:
 - `copyright` slice (mandatory, always present)
@@ -249,7 +249,7 @@ Testing is mandatory. Depth depends on what the package provides.
 Use the bundled `try-cut` helper to run a cut from the current checkout without managing the temp root manually:
 
 ```bash
-${MASON_ROOT}/scripts/try-cut [--arch ARCH] <package>_<slice>
+scripts/try-cut [--arch ARCH] <package>_<slice>
 ```
 
 Or manually:

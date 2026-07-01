@@ -46,7 +46,7 @@ there is one skill, `chisel-releases`.
 mason/
   skills/
     chisel-releases/               # a skill -- self-contained, copied verbatim on install
-      SKILL.md                     # skill entry + command dispatch + ${MASON_ROOT} convention
+      SKILL.md                     # skill entry + command dispatch
       commands/
         write-slice.md             # author + test + commit (10-step authoring workflow)
         review-slice.md            # review checklist (CI checks, style, deps, rejection reasons)

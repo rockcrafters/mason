@@ -19,11 +19,11 @@ directory. Every repo path you read or write -- `slices/<pkg>.yaml`,
 `tests/spread/...`, `chisel.yaml`, sibling SDFs -- is relative to this checkout,
 exactly as written.
 
-This skill's own files are separate, under `${MASON_ROOT}` (the directory holding
-this `SKILL.md`; on claude code, `${CLAUDE_PLUGIN_ROOT}/skills/chisel-releases`).
-They are read-only. A `${MASON_ROOT}/...` path always points at one of them.
+Paths below (`commands/`, `shared/`, `scripts/`, `schemas/`) are relative to this
+skill's own directory instead -- the one holding this `SKILL.md`. They are
+read-only.
 
-## Layout (under `${MASON_ROOT}`)
+## Layout
 
 - `commands/` -- command workflows: markdown to read and follow, not executable scripts
 - `shared/CHISEL.md` -- reference (format, branch model, schema versions, naming, sources of truth)
@@ -32,16 +32,11 @@ They are read-only. A `${MASON_ROOT}/...` path always points at one of them.
 
 ## Orient first
 
-Before anything else, run:
-
-```
-${MASON_ROOT}/scripts/orientation [<package>]
-```
-
-It prints -- deterministically -- your working dir, the skill dir (`${MASON_ROOT}`),
-and the target release + manifest format parsed from `chisel.yaml`. Treat its
-output as ground truth; don't infer any of it. Then read
-`${MASON_ROOT}/shared/CHISEL.md` for format and conventions.
+Before anything else, run `scripts/orientation [<package>]`. It prints --
+deterministically -- your working dir, this skill's own dir, and the target
+release + manifest format parsed from `chisel.yaml`. Treat its output as ground
+truth; don't infer any of it. Then read `shared/CHISEL.md` for format and
+conventions.
 
 ## Commands
 

@@ -13,7 +13,7 @@ working on [`canonical/chisel-releases`](https://github.com/canonical/chisel-rel
 
 @./mason/skills/chisel-releases/SKILL.md
 
-self-contained under `./mason/skills/chisel-releases/`: `commands/`, shared reference `shared/CHISEL.md`, helpers `scripts/` (`deb-list`, `try-cut`), command index `schemas/commands.manifest.yaml`. paths inside command files are relative to `${MASON_ROOT}` (the skill's own directory).
+self-contained under `./mason/skills/chisel-releases/`: `commands/`, shared reference `shared/CHISEL.md`, helpers `scripts/` (`orientation`, `deb-list.py`, `try-cut`), command index `schemas/commands.manifest.yaml`. paths inside command files are relative to the skill's own directory (or, for repo paths like `slices/`, to the chisel-releases checkout being worked on).
 
 ## install
 

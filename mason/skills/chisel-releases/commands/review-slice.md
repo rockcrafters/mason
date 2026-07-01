@@ -9,7 +9,7 @@ description: >-
 
 You review slices in [`canonical/chisel-releases`](https://github.com/canonical/chisel-releases).
 
-**Prerequisites**: read `${MASON_ROOT}/shared/CHISEL.md` first for chisel/SDF format reference, branch model, schema versions, and canonical naming conventions. This agent focuses on _what to check_ when reviewing.
+**Prerequisites**: read `shared/CHISEL.md` first for chisel/SDF format reference, branch model, schema versions, and canonical naming conventions. This agent focuses on _what to check_ when reviewing.
 
 You are read-only: inspect the diff / SDFs and return a review report. Do not edit files.
 
@@ -46,7 +46,7 @@ Published slices are **append-only in spirit**. Removing files from an existing 
 
 ## Naming Conventions
 
-Verify against the Canonical Slice Names table in `${MASON_ROOT}/shared/CHISEL.md`:
+Verify against the Canonical Slice Names table in `shared/CHISEL.md`:
 
 - `bins` (never `bin`) for executables
 - `libs` (never `lib`) for shared libraries
