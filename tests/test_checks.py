@@ -155,6 +155,26 @@ def test_scaffold_test() -> None:
         assert "ok:" in ct, ct
 
 
+def test_robustness() -> None:
+    # a PR-review bot runs on arbitrary diffs; the checkers must degrade
+    # gracefully on malformed SDFs, never crash. each of these should produce a
+    # block (or clean handling), never a Python traceback.
+    cases = {
+        "empty.yaml": "",
+        "scalar.yaml": "just a string",
+        "list.yaml": "- a\n- b\n",
+        "wrongtypes.yaml": "package: [1, 2]\nslices: not-a-map\n",
+        "numkey.yaml": "package: x\nslices:\n  bins:\n    contents:\n      123: {}\n",
+        "badyaml.yaml": 'key: "unclosed\n',
+    }
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        for name, text in cases.items():
+            for tool in ("check-slice.py", "check-test.py", "scaffold-test.py"):
+                out = run(tool, write(d, name, text))
+                assert "Traceback" not in out, f"{tool} crashed on {name}: {out}"
+
+
 def test_draft_sdf() -> None:
     import importlib.util
     spec = importlib.util.spec_from_file_location("deblist", str(SCRIPTS / "deb-list.py"))
