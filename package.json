@@ -2,7 +2,7 @@
   "name": "mason",
   "version": "0.1.0",
   "description": "Cross-agent skill installer for authoring and reviewing chisel slice definition files (SDFs).",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "type": "commonjs",
   "bin": {
     "mason": "scripts/cli.js"
