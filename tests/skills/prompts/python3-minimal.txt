@@ -1,0 +1,5 @@
+Use the chisel-releases skill to author a chisel slice definition file (SDF) for the package `python3-minimal` on the `ubuntu-26.04` branch.
+
+You are in a checkout of canonical/chisel-releases (your current directory). Write the slice to `slices/python3-minimal.yaml`, following the skill's write-slice workflow and the conventions in the skill's shared reference.
+
+This is an automated eval: work autonomously, do not ask questions, and do not open a PR. Produce the slice file and stop.

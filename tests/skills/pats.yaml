@@ -1,0 +1,173 @@
+# mason eval via pats (https://github.com/lczyk/pats).
+# run:   cd tests/skills && pats run        # runs the agent(s) in docker -- slow, live
+# score: cd tests/skills && pats score      # scores the latest run, offline
+# pats builds the sandbox image itself (build: below); no manual docker build.
+
+sandboxes:
+  # one sandbox for every harness: pats auto-allows each harness's own hosts
+  # (anthropic/claude for claude-cli, openrouter/models.dev/npm for opencode),
+  # so the allowlist below is task needs only.
+  #
+  # github.com / raw.githubusercontent.com / codeload.github.com are deliberately
+  # NOT allowed. the skill's write-slice workflow (Step 2) legitimately wants to
+  # fetch sibling-branch SDFs from github for cross-release comparison -- but for
+  # several of our knockout cases that sibling SDF IS (or is near-identical to)
+  # the held-out answer, so allowing github would reopen the answer-leak this
+  # harness exists to prevent. Step 2 is expected to fail/no-op under this
+  # policy; that's intentional, not a gap.
+  - id: docker-mason-test
+    kind: container
+    driver: docker
+    build: .
+    egress:
+      mode: proxy
+      default: deny
+      allow:
+        - .ubuntu.com # apt mirrors (archive/ports/security) for deb-list
+
+
+# single sandbox defined -> it's the default; no per-agent sandbox: needed.
+agents:
+  - id: haiku
+    kind: claude-cli-keyless
+    model: claude-haiku-4-5-20251001
+    effort: low
+  # gemini-2.5-flash-lite benched too weak for this skill: broke tool-call
+  # namespacing (`default_api.skill`), dumped pseudocode as plain text instead
+  # of calling tools, and fabricated done-state (claimed files written/committed
+  # that don't exist in output). see .pats/runs/20260630-012.
+  # - id: gemini
+  #   kind: opencode-openrouter
+  #   model: google/gemini-2.5-flash-lite
+  # deliberately-bad-model canary: gpt-4o-mini fabricates done-state and skips
+  # derivation (see .pats/runs/20260630-014). kept on purpose as the floor --
+  # it measures whether the skill degrades gracefully, not skill quality.
+  - id: gpt-mini
+    kind: opencode-openrouter
+    model: openai/gpt-4o-mini
+    effort: low
+  # cheap-but-stronger rung, all via openrouter+opencode, from a live openrouter
+  # pricing pull (2026-07-02). deepseek-chat-v3.1 (redundant with the strong
+  # slot) and glm-4.6 (pricey: $0.43/M in) dropped 2026-07-02; deepseek-v3.2
+  # holds the strong-opencode slot at $0.229/M in with in-eval family evidence.
+  - id: qwen3-coder-flash
+    kind: opencode-openrouter
+    model: qwen/qwen3-coder-flash
+    effort: low
+  - id: gpt-5-mini
+    kind: opencode-openrouter
+    model: openai/gpt-5-mini
+    effort: low
+  # benched 0.76 on 20260702-004 but the losses are 10m-timeout deaths, not bad
+  # output: it slices deps bottom-up so methodically it runs out of clock
+  # (python3-minimal never reached the target file; ipmitool wrote 2/3). where
+  # it finished it scored 0.90-0.98. too slow for the 10m task timeout --
+  # re-enable if timeouts are ever raised.
+  # - id: deepseek-v3.2
+  #   kind: opencode-openrouter
+  #   model: deepseek/deepseek-v3.2
+  # benched fine (0.93 on 20260702-003) but pricey ($0.43/M in vs v3.2's
+  # $0.229) -- re-enable to cross-check the strong slot.
+  # - id: glm-4.6
+  #   kind: opencode-openrouter
+  #   model: z-ai/glm-4.6
+  # cheapest kimi on openrouter ($0.375/M in, $2.025/M out)
+  - id: kimi-k2.5
+    kind: opencode-openrouter
+    model: moonshotai/kimi-k2.5
+    effort: low
+
+# knockout: prepare deletes the real slice (snapshotting it as ground truth);
+# the agent must reproduce it. collect gathers what the agent wrote.
+# single-target cases only for now -- multi-target denovo (i2c-tools, ipmitool)
+# are wired separately later.
+# each task's setup lives in tasks/prepare_<id>.sh (branch + knockout/denovo +
+# any target list baked in; shared logic in tasks/_lib.sh). collect is uniform
+# (tasks/collect.sh reads $PATS_TASK_ID). pats execs both directly with ${id} ->
+# the task id.
+tasks:
+  - id: base-passwd
+    prompt: prompts/base-passwd.txt
+    prepare: tasks/prepare_${id}.sh
+    collect: tasks/collect.sh
+    timeout: 10m
+  - id: ca-certificates
+    prompt: prompts/ca-certificates.txt
+    prepare: tasks/prepare_${id}.sh
+    collect: tasks/collect.sh
+    timeout: 10m
+  - id: curl
+    prompt: prompts/curl.txt
+    prepare: tasks/prepare_${id}.sh
+    collect: tasks/collect.sh
+    timeout: 10m
+  - id: python3-minimal
+    prompt: prompts/python3-minimal.txt
+    prepare: tasks/prepare_${id}.sh
+    collect: tasks/collect.sh
+    timeout: 10m
+  - id: python3-pip
+    prompt: prompts/python3-pip.txt
+    prepare: tasks/prepare_${id}.sh
+    collect: tasks/collect.sh
+    timeout: 10m
+  - id: python3.14-minimal
+    prompt: prompts/python3.14-minimal.txt
+    prepare: tasks/prepare_${id}.sh
+    collect: tasks/collect.sh
+    timeout: 10m
+  - id: python3.14
+    prompt: prompts/python3.14.txt
+    prepare: tasks/prepare_${id}.sh
+    collect: tasks/collect.sh
+    timeout: 10m
+  # denovo, multi-target: ground truth = silver files; one agent run authors
+  # several slices, scorers average across targets.
+  - id: i2c-tools
+    prompt: prompts/i2c-tools.txt
+    prepare: tasks/prepare_${id}.sh
+    collect: tasks/collect.sh
+    timeout: 10m
+  - id: ipmitool
+    prompt: prompts/ipmitool.txt
+    prepare: tasks/prepare_${id}.sh
+    collect: tasks/collect.sh
+    timeout: 10m
+
+# each scorer is a standalone uv script scorers/scorer_<id>.py (shared helpers
+# in scorers/_lib.py). pats execs it directly; first stdout line = float [0,1]
+# or `na` (skip). ${id} -> the scorer id.
+scorers:
+  - {id: target-present,              score: "scorers/scorer_${id}.py"}
+  - {id: yaml-parses,                 score: "scorers/scorer_${id}.py"}
+  - {id: filename-matches-package,    score: "scorers/scorer_${id}.py"}
+  - {id: paths-sorted,                score: "scorers/scorer_${id}.py"}
+  - {id: copyright-essential,         score: "scorers/scorer_${id}.py"}
+  - {id: copyright-path-present,      score: "scorers/scorer_${id}.py"}
+  - {id: arch-format,                 score: "scorers/scorer_${id}.py"}
+  - {id: mutate-present,              score: "scorers/scorer_${id}.py"}
+  - {id: mutate-paths,                score: "scorers/scorer_${id}.py"}
+  - {id: no-man-pages,                score: "scorers/scorer_${id}.py"}
+  - {id: no-doc-clutter,             score: "scorers/scorer_${id}.py"}
+  - {id: no-shell-completions,        score: "scorers/scorer_${id}.py"}
+  - {id: mutable-has-text,            score: "scorers/scorer_${id}.py"}
+  - {id: slice-count-not-inflated,    score: "scorers/scorer_${id}.py"}
+  - {id: slice-names-canonical,       score: "scorers/scorer_${id}.py"}
+  - {id: structural-distance,         score: "scorers/scorer_${id}.py"}
+  - {id: chisel-cut,                  score: "scorers/scorer_${id}.py"}
+  - {id: orientation-called,          score: "scorers/scorer_${id}.py"}
+  - {id: spread-test-present,         score: "scorers/scorer_${id}.py"}
+  - {id: spread-exercises-binaries,   score: "scorers/scorer_${id}.py"}
+  - {id: v3-essential-format-compat,  score: "scorers/scorer_${id}.py"}
+  - {id: essential-map-format-compat, score: "scorers/scorer_${id}.py"}
+  - {id: hint-format-compat,          score: "scorers/scorer_${id}.py"}
+  - {id: prefer-format-compat,        score: "scorers/scorer_${id}.py"}
+  - {id: essential-list-on-v1,        score: "scorers/scorer_${id}.py"}
+
+test-matrix:
+  - agent: [haiku, gpt-mini, qwen3-coder-flash, gpt-5-mini, kimi-k2.5]
+    task: "*"
+
+scorer-matrix:
+  - scorer: "*"
+    task: "*"

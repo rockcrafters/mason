@@ -1,0 +1,13 @@
+# self-installs from running `npx . install` against this repo
+/.claude/skills/
+/.pi/
+/.codex/
+/.opencode/
+/.github/skills/
+
+node_modules/
+.DS_Store
+__pycache__/
+
+# pats run artifacts
+/tests/skills/.pats/

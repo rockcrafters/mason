@@ -1,88 +1,76 @@
 # mason
 
+![WIP](https://img.shields.io/badge/%E2%9A%A0%EF%B8%8F%20work%20in%20progress%20%20%E2%9A%A0%EF%B8%8F-ffffff)
+[![Ubuntu](https://img.shields.io/badge/Ubuntu-E95420?logo=ubuntu&logoColor=white)](#)
+[![rocks](https://img.shields.io/badge/%F0%9F%AA%A8-rocks-E95420)](https://ubuntu.com/server/docs/explanation/virtualisation/about-rock-images/)
+
+WIP. Layout and naming subject to change.
+
 <p align="center">
-  <img src="assets/Mason_logo.png" alt="Mason logo">
+  <img src="assets/logo.png" alt="Mason logo">
 </p>
 
 Agent kit for working on [`canonical/chisel-releases`](https://github.com/canonical/chisel-releases). Packages the tribal knowledge needed to author and review chisel slice definition files (SDFs) so an AI coding agent can pick it up on demand.
 
+## install
+
+Install the skills into another repo for your agent with `npx`, no clone or npm publish needed:
+
+```
+npx github:rockcrafters/mason install --agents claude
+```
+
+```
+--agents <list>   comma-separated: claude, pi, copilot, opencode, codex (default: auto-detect)
+--target <dir>    install into <dir> (default: git root, else cwd)
+--dry-run         show what would change, write nothing
+--force           overwrite files that differ from the skill source
+--quiet, -q       suppress per-file logs (warnings still print)
+--help, -h        show this help
+```
+
+The installer copies each self-contained skill tree into the agent's skill-discovery directory
+(`.claude/skills/<skill>`, `.pi/skills/<skill>`, `.github/skills/<skill>`, `.opencode/skills/<skill>`, `.codex/skills/<skill>`);
+opencode additionally gets a generated `.opencode/command/<skill>.md`. Re-running skips up-to-date
+files and leaves locally-modified ones alone unless `--force` is set.
+
+Claude code users can alternatively add it as a plugin via the marketplace (`.claude-plugin/`).
+
 ## what's in here
 
-```
-skills/
-  CHISEL.md                        # shared reference (format, branch model, schema versions, sources of truth)
-  write-slice/
-    SKILL.md                       # 10-step authoring workflow
-    deb-list                       # python script to inspect .deb contents before authoring
-    try-cut                        # bash script to test slices against the current checkout
-  review-slice/
-    SKILL.md                       # review checklist (CI checks, style, deps, rejection reasons)
-src/plugins/opencode/              # opencode slash-command shims
-.claude-plugin/                    # claude code plugin manifest
-AGENTS.md                          # agent entrypoint -- references all three skill files
-```
-
-### skills
-
-Each `skills/<name>/SKILL.md` is a self-contained briefing an agent loads on demand.
-
-| skill | purpose |
-|-------|---------|
-| `write-slice` | Author new SDFs: validate target, build dep tree, inspect packages with `deb-list`, design slices, write + format + test + commit. Stops at local commits. After work, proposes a docs-alignment review against [chisel-docs](https://github.com/canonical/chisel-docs). |
-| `review-slice` | Review SDFs: CI checks, dependency validation, naming & formatting rules, forward-port requirements, common rejection reasons. |
-
-`CHISEL.md` is shared reference material both skills depend on: SDF format, `chisel.yaml` schema versions (v1/v2/v3), branch model, canonical slice names, multiarch quirks, sources of truth, and external links.
-
-### `deb-list`
-
-Python helper at `skills/write-slice/deb-list`. Inspects a `.deb` package before authoring slices:
+`mason` is an umbrella kit for chisel / rocks work. each capability area is one self-contained skill
+under `mason/skills/`; the installer copies each per agent (no committed per-agent adapters). today
+there is one skill, `chisel-releases`.
 
 ```
-$ deb-list bash
-package: bash  version: 5.3-2ubuntu1  arch: amd64
-
-Depends: base-files (>= 2.1.12), debianutils (>= 5.6-0.1)
-
-files (lexicographic):  [x]=executable  [f]=file  [l]=symlink
-  [f] 0644 root/root  /etc/bash.bashrc
-  [x] 0755 root/root  /usr/bin/bash
-  [l] 0777 root/root  /usr/bin/rbash -> bash
-  [f] 0644 root/root  /usr/share/doc/bash/copyright
-  ...
-
-maintainer scripts present: postinst  (re-run with --scripts to view)
+mason/
+  skills/
+    chisel-releases/               # a skill -- self-contained, copied verbatim on install
+      SKILL.md                     # skill entry + command dispatch
+      commands/
+        write-slice.md             # author + scaffold tests + self-check + commit
+        review-slice.md            # review: deterministic first pass (scripts) + judgement
+      shared/CHISEL.md             # shared reference (format, branch model, schema versions, sources of truth)
+      scripts/
+        orientation                # deterministic orientation: cwd, skill dir, target release + format
+        deb-list.py                # inspect .deb contents (files, deps, maintainer scripts); --sdf emits a draft SDF
+        try-cut                    # test slices with chisel cut against the current checkout
+        scaffold-test.py           # emit a spread task.yaml skeleton (a rootfs per slice, every binary listed)
+        check-slice.py             # lint an SDF: sorting, naming, copyright, clutter, arch, version-gated fields
+        check-test.py              # report binary test coverage for a slice
+        check-diff.py              # append-only regressions (removed SDF / slice / path) vs a base ref
+        review-diff.py             # run the three checks over a PR diff -> report + verdict + exit code
+      schemas/commands.manifest.yaml  # command index (command -> file)
+  .claude-plugin/                  # claude code plugin manifest
+scripts/cli.js                     # the npx installer (installs every skill under mason/skills/)
+package.json                       # bin: mason -> scripts/cli.js
 ```
 
-Requires `apt-get` + `dpkg-deb` and a populated apt cache.
-
-### `try-cut`
-
-Bash helper at `skills/write-slice/try-cut`. Runs `chisel cut` from the current chisel-releases checkout into a temp root without managing the directory manually:
-
-```
-try-cut [--arch ARCH] <pkg>_<slice> [...]
-```
-
-Passes chisel's output through unchanged and returns its exit code. Useful for quickly validating a new SDF before committing.
-
-### plugin integrations
-
-| client | how |
-|--------|-----|
-| claude code | `/plugin marketplace add rockcrafters/mason` then `/plugin install mason@mason` |
-| opencode | add `"plugin": ["$MASON/src/plugins/opencode"]` to `~/.config/opencode/opencode.json` |
-| codex | `ln -s "$MASON/skills/write-slice" ~/.codex/skills/write-slice` |
-| copilot cli | `ln -s "$MASON/AGENTS.md" AGENTS.md` in project root |
-| gemini cli | `ln -s "$MASON/GEMINI.md" GEMINI.md` in project root |
-
-`$MASON` = wherever you cloned this repo.
+Adding a capability = a new skill directory under `mason/skills/`; the installer picks it up automatically.
 
 ## sources of truth
 
-The skills defer to three upstream projects. When in doubt:
+The skill defers to three upstream projects. When in doubt:
 
 **tool behaviour** ([canonical/chisel](https://github.com/canonical/chisel)) > **docs** ([canonical/chisel-docs](https://github.com/canonical/chisel-docs)) > **conventions** ([canonical/chisel-releases](https://github.com/canonical/chisel-releases)) > **this repo**
 
-## status
-
-WIP. Layout and naming subject to change.
