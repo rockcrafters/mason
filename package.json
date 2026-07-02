@@ -7,6 +7,9 @@
   "bin": {
     "mason": "scripts/cli.js"
   },
+  "scripts": {
+    "test": "node --test \"tests/scripts/**/*.test.js\""
+  },
   "files": [
     "scripts/cli.js",
     "mason",
