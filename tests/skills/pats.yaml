@@ -1,51 +1,35 @@
 # mason eval via pats (https://github.com/lczyk/pats).
 # run:   cd tests/skills && pats run        # runs the agent(s) in docker -- slow, live
 # score: cd tests/skills && pats score      # scores the latest run, offline
-#
-# build the sandbox image first (pats image not published yet):
-#   docker build -t mason-test/sandbox:26.04 tests/skills/
+# pats builds the sandbox image itself (build: below); no manual docker build.
 
 sandboxes:
+  # one sandbox for every harness: pats auto-allows each harness's own hosts
+  # (anthropic/claude for claude-cli, openrouter/models.dev/npm for opencode),
+  # so the allowlist below is task needs only.
+  #
   # github.com / raw.githubusercontent.com / codeload.github.com are deliberately
-  # NOT allowed on either sandbox below. the skill's write-slice workflow (Step 2)
-  # legitimately wants to fetch sibling-branch SDFs from github for cross-release
-  # comparison -- but for several of our knockout cases that sibling SDF IS (or is
-  # near-identical to) the held-out answer, so allowing github would reopen the
-  # answer-leak this harness exists to prevent. Step 2 is expected to fail/no-op
-  # under this policy; that's intentional, not a gap.
-  # claude-cli harness: only anthropic + apt mirrors.
+  # NOT allowed. the skill's write-slice workflow (Step 2) legitimately wants to
+  # fetch sibling-branch SDFs from github for cross-release comparison -- but for
+  # several of our knockout cases that sibling SDF IS (or is near-identical to)
+  # the held-out answer, so allowing github would reopen the answer-leak this
+  # harness exists to prevent. Step 2 is expected to fail/no-op under this
+  # policy; that's intentional, not a gap.
   - id: docker-mason-test
     kind: container
     driver: docker
-    image: mason-test/sandbox:26.04
+    build: .
     egress:
       mode: proxy
       default: deny
       allow:
-        - .anthropic.com   # claude api
-        - .claude.com      # claude-cli auth (platform.claude.com) -- not hit every
-                           # run (token-refresh path), but required when it fires:
-                           # missing it causes "401 Invalid authentication credentials"
-        - .ubuntu.com      # apt mirrors (archive/ports/security) for deb-list
-  # opencode harness: openrouter + its startup fetches (model catalog, npm) + apt.
-  - id: docker-mason-test-oc
-    kind: container
-    driver: docker
-    image: mason-test/sandbox:26.04
-    egress:
-      mode: proxy
-      default: deny
-      allow:
-        - openrouter.ai        # opencode -> openrouter (proxies to providers)
-        - models.dev           # opencode model catalog
-        - registry.npmjs.org   # opencode runtime plugin/dep fetch
-        - .ubuntu.com          # apt mirrors for deb-list
+        - .ubuntu.com # apt mirrors (archive/ports/security) for deb-list
 
 
+# single sandbox defined -> it's the default; no per-agent sandbox: needed.
 agents:
   - id: haiku
     kind: claude-cli-keyless
-    sandbox: docker-mason-test
     model: claude-haiku-4-5-20251001
     effort: low
   # gemini-2.5-flash-lite benched too weak for this skill: broke tool-call
@@ -54,30 +38,44 @@ agents:
   # that don't exist in output). see .pats/runs/20260630-012.
   # - id: gemini
   #   kind: opencode-openrouter
-  #   sandbox: docker-mason-test-oc
   #   model: google/gemini-2.5-flash-lite
+  # deliberately-bad-model canary: gpt-4o-mini fabricates done-state and skips
+  # derivation (see .pats/runs/20260630-014). kept on purpose as the floor --
+  # it measures whether the skill degrades gracefully, not skill quality.
   - id: gpt-mini
     kind: opencode-openrouter
-    sandbox: docker-mason-test-oc
     model: openai/gpt-4o-mini
-  # cheap-but-stronger rung, all via openrouter+opencode -- coder-tuned, gpt-5
-  # lineage, deepseek-v3 family, GLM, picked from a live openrouter pricing pull.
+    effort: low
+  # cheap-but-stronger rung, all via openrouter+opencode, from a live openrouter
+  # pricing pull (2026-07-02). deepseek-chat-v3.1 (redundant with the strong
+  # slot) and glm-4.6 (pricey: $0.43/M in) dropped 2026-07-02; deepseek-v3.2
+  # holds the strong-opencode slot at $0.229/M in with in-eval family evidence.
   - id: qwen3-coder-flash
     kind: opencode-openrouter
-    sandbox: docker-mason-test-oc
     model: qwen/qwen3-coder-flash
+    effort: low
   - id: gpt-5-mini
     kind: opencode-openrouter
-    sandbox: docker-mason-test-oc
     model: openai/gpt-5-mini
-  - id: deepseek-v3
+    effort: low
+  # benched 0.76 on 20260702-004 but the losses are 10m-timeout deaths, not bad
+  # output: it slices deps bottom-up so methodically it runs out of clock
+  # (python3-minimal never reached the target file; ipmitool wrote 2/3). where
+  # it finished it scored 0.90-0.98. too slow for the 10m task timeout --
+  # re-enable if timeouts are ever raised.
+  # - id: deepseek-v3.2
+  #   kind: opencode-openrouter
+  #   model: deepseek/deepseek-v3.2
+  # benched fine (0.93 on 20260702-003) but pricey ($0.43/M in vs v3.2's
+  # $0.229) -- re-enable to cross-check the strong slot.
+  # - id: glm-4.6
+  #   kind: opencode-openrouter
+  #   model: z-ai/glm-4.6
+  # cheapest kimi on openrouter ($0.375/M in, $2.025/M out)
+  - id: kimi-k2.5
     kind: opencode-openrouter
-    sandbox: docker-mason-test-oc
-    model: deepseek/deepseek-chat-v3.1
-  - id: glm-4.6
-    kind: opencode-openrouter
-    sandbox: docker-mason-test-oc
-    model: z-ai/glm-4.6
+    model: moonshotai/kimi-k2.5
+    effort: low
 
 # knockout: prepare deletes the real slice (snapshotting it as ground truth);
 # the agent must reproduce it. collect gathers what the agent wrote.
@@ -167,7 +165,7 @@ scorers:
   - {id: essential-list-on-v1,        score: "scorers/scorer_${id}.py"}
 
 test-matrix:
-  - agent: [haiku, gpt-mini, qwen3-coder-flash, gpt-5-mini, deepseek-v3, glm-4.6]
+  - agent: [haiku, gpt-mini, qwen3-coder-flash, gpt-5-mini, kimi-k2.5]
     task: "*"
 
 scorer-matrix:
