@@ -70,11 +70,11 @@ agents:
   # holds the strong-opencode slot at $0.229/M in with in-eval family evidence.
   - id: qwen3-coder-flash
     kind: opencode-openrouter
-    model: qwen/qwen3-coder-flash
+    model: qwen/${id}
     effort: low
   - id: gpt-5-mini
     kind: opencode-openrouter
-    model: openai/gpt-5-mini
+    model: openai/${id}
     effort: low
   # benched 0.76 on 20260702-004 but the losses are 10m-timeout deaths, not bad
   # output: it slices deps bottom-up so methodically it runs out of clock
@@ -92,7 +92,7 @@ agents:
   # cheapest kimi on openrouter ($0.375/M in, $2.025/M out)
   - id: kimi-k2.5
     kind: opencode-openrouter
-    model: moonshotai/kimi-k2.5
+    model: moonshotai/${id}
     effort: low
 
 # knockout: prepare deletes the real slice (snapshotting it as ground truth);
@@ -105,52 +105,43 @@ agents:
 # the task id.
 tasks:
   - id: base-passwd
-    prompt: prompts/base-passwd.txt
+    prompt: prompts/${id}.txt
     prepare: tasks/prepare_${id}.sh
     collect: tasks/collect.sh
-    timeout: 10m
   - id: ca-certificates
-    prompt: prompts/ca-certificates.txt
+    prompt: prompts/${id}.txt
     prepare: tasks/prepare_${id}.sh
     collect: tasks/collect.sh
-    timeout: 10m
   - id: curl
-    prompt: prompts/curl.txt
+    prompt: prompts/${id}.txt
     prepare: tasks/prepare_${id}.sh
     collect: tasks/collect.sh
-    timeout: 10m
   - id: python3-minimal
-    prompt: prompts/python3-minimal.txt
+    prompt: prompts/${id}.txt
     prepare: tasks/prepare_${id}.sh
     collect: tasks/collect.sh
-    timeout: 10m
   - id: python3-pip
-    prompt: prompts/python3-pip.txt
+    prompt: prompts/${id}.txt
     prepare: tasks/prepare_${id}.sh
     collect: tasks/collect.sh
-    timeout: 10m
   - id: python3.14-minimal
-    prompt: prompts/python3.14-minimal.txt
+    prompt: prompts/${id}.txt
     prepare: tasks/prepare_${id}.sh
     collect: tasks/collect.sh
-    timeout: 10m
   - id: python3.14
-    prompt: prompts/python3.14.txt
+    prompt: prompts/${id}.txt
     prepare: tasks/prepare_${id}.sh
     collect: tasks/collect.sh
-    timeout: 10m
   # denovo, multi-target: ground truth = silver files; one agent run authors
   # several slices, scorers average across targets.
   - id: i2c-tools
-    prompt: prompts/i2c-tools.txt
+    prompt: prompts/${id}.txt
     prepare: tasks/prepare_${id}.sh
     collect: tasks/collect.sh
-    timeout: 10m
   - id: ipmitool
-    prompt: prompts/ipmitool.txt
+    prompt: prompts/${id}.txt
     prepare: tasks/prepare_${id}.sh
     collect: tasks/collect.sh
-    timeout: 10m
 
 # each scorer is a standalone uv script scorers/scorer_<id>.py (shared helpers
 # in scorers/_lib.py). pats execs it directly; first stdout line = float [0,1]
@@ -182,10 +173,45 @@ scorers:
   - {id: prefer-format-compat,        score: "scorers/scorer_${id}.py"}
   - {id: essential-list-on-v1,        score: "scorers/scorer_${id}.py"}
 
-test-matrix:
-  - agent: [haiku, gpt-mini, qwen3-coder-flash, gpt-5-mini, kimi-k2.5]
-    task: "*"
-
-scorer-matrix:
-  - scorer: "*"
-    task: "*"
+# suites: run = agents x tasks, score = tasks x scorers, both within the suite.
+# every id explicit (no wildcards); pats' orphan check errors on any task /
+# scorer / agent left out of every suite, so nothing silently stops running.
+suites:
+  - id: sdf
+    agents: &all-agents [haiku, gpt-mini, qwen3-coder-flash, gpt-5-mini, kimi-k2.5]
+    tasks:
+      - base-passwd
+      - ca-certificates
+      - curl
+      - python3-minimal
+      - python3-pip
+      - python3.14-minimal
+      - python3.14
+      - i2c-tools
+      - ipmitool
+    scorers:
+      - target-present
+      - yaml-parses
+      - filename-matches-package
+      - paths-sorted
+      - copyright-essential
+      - copyright-path-present
+      - arch-format
+      - mutate-present
+      - mutate-paths
+      - no-man-pages
+      - no-doc-clutter
+      - no-shell-completions
+      - mutable-has-text
+      - slice-count-not-inflated
+      - slice-names-canonical
+      - structural-distance
+      - chisel-cut
+      - orientation-called
+      - spread-test-present
+      - spread-exercises-binaries
+      - v3-essential-format-compat
+      - essential-map-format-compat
+      - hint-format-compat
+      - prefer-format-compat
+      - essential-list-on-v1
