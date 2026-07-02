@@ -1,9 +1,11 @@
 ---
 name: chisel-releases
 description: >-
-  Author and review chisel slice definition files (SDFs) against canonical/chisel-releases.
+  Author or review chisel slice definition files (SDFs) against canonical/chisel-releases.
   Command-per-file architecture, portable across claude code, pi, opencode, copilot, and codex.
   Commands: write-slice (author + test + commit), review-slice (read-only review).
+  Use when user says "add slice", "write a chisel slice", "review slices/<pkg>.yaml",
+  or works inside a canonical/chisel-releases checkout.
 argument-hint: "[write-slice|review-slice] <pkg-or-sdf>"
 ---
 
