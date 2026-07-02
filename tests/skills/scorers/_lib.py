@@ -30,7 +30,7 @@ __all__ = [
     "OUT", "TASK", "NA", "emit", "avg", "produced", "expected",
     "fmt", "iter_contents", "iter_bodies", "mutate_map",
     "mutate_paths", "content_paths", "declared_binaries", "path_penalty",
-    "targets", "fmt_compat", "CANONICAL", "has_slices",
+    "targets", "fmt_compat", "CANONICAL", "has_slices", "transcript",
 ]
 
 OUT = Path(os.environ["PATS_OUTPUT_DIR"])
@@ -179,6 +179,97 @@ def path_penalty(matches: Callable[[str], bool], allow: Callable[[str, Any], boo
                 bad += 1
         return 1.0 if total == 0 else (total - bad) / total
     return f
+
+
+# --- transcript parsing ------------------------------------------------------
+# shared by scorers that read the agent's event stream rather than its files.
+# scorer_orientation-called.py and scorer_chisel-cut.py predate this helper and
+# carry their own copies of the same format detection.
+
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+_WRITE_TOOLS = {"write", "edit", "multiedit", "notebookedit", "patch"}
+_PATH_KEYS = ("file_path", "filePath", "path", "notebook_path")
+
+
+def _jsonl(path: Path):
+    """yield parsed json objects from a jsonl file, skipping non-json lines."""
+    import json
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            yield json.loads(line)
+        except ValueError:
+            continue
+
+
+def transcript() -> dict:
+    """parse the run transcript (stdout.log) into what the agent said and did.
+
+        texts     assistant-visible output text (NOT tool results -- a scorer
+                  grepping for skill phrases must not match the skill file the
+                  agent read)
+        commands  bash commands the agent ran
+        writes    file paths touched via write/edit-style tools
+        parsed    True when a structured format matched; False -> plain-text
+                  fallback, only `raw` is meaningful
+        raw       ansi-stripped stdout+stderr, all formats
+
+    formats tried in order: claude stream-json (lines carry "message" /
+    "session_id"), opencode --format json (lines carry a "part" object).
+    """
+    texts: list[str] = []
+    commands: list[str] = []
+    writes: list[str] = []
+    saw_claude = saw_oc = False
+
+    for ev in _jsonl(OUT / "stdout.log"):
+        if "message" in ev or "session_id" in ev:
+            saw_claude = True
+        msg = ev.get("message") or {}
+        for c in (msg.get("content") or []):
+            if not isinstance(c, dict):
+                continue
+            if c.get("type") == "text" and msg.get("role") == "assistant":
+                texts.append(str(c.get("text", "")))
+            elif c.get("type") == "tool_use":
+                inp = c.get("input") or {}
+                name = str(c.get("name", "")).lower()
+                if name == "bash":
+                    commands.append(str(inp.get("command", "")))
+                elif name in _WRITE_TOOLS:
+                    writes.extend(str(inp[k]) for k in _PATH_KEYS if k in inp)
+
+        part = ev.get("part")
+        if not isinstance(part, dict):
+            continue
+        saw_oc = True
+        if ev.get("type") == "text":
+            texts.append(str(part.get("text", "")))
+        elif ev.get("type") == "tool_use":
+            state = part.get("state") or {}
+            inp = state.get("input") or {}
+            tool = str(part.get("tool", "")).lower()
+            if "command" in inp:
+                commands.append(str(inp.get("command", "")))
+            elif tool in _WRITE_TOOLS or any(k in inp for k in _PATH_KEYS):
+                writes.extend(str(inp[k]) for k in _PATH_KEYS if k in inp)
+
+    chunks = []
+    for name in ("stdout.log", "stderr.log"):
+        p = OUT / name
+        if p.exists():
+            chunks.append(_ANSI.sub("", p.read_text(encoding="utf-8", errors="replace")))
+    return {
+        "texts": texts,
+        "commands": commands,
+        "writes": writes,
+        "parsed": saw_claude or saw_oc,
+        "raw": "\n".join(chunks),
+    }
 
 
 def fmt_compat(uses: Callable[[Any], bool], min_ok_fmt: int, exact_ok: int | None = None) -> float:

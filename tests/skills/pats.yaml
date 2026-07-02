@@ -142,6 +142,12 @@ tasks:
     prompt: prompts/${id}.txt
     prepare: tasks/prepare_${id}.sh
     collect: tasks/collect.sh
+  # help: does /mason print the usage block and stop? no repo, no knockout, and
+  # nothing to collect -- the scorers read the transcript only.
+  - id: mason-help
+    prompt: prompts/${id}.txt
+    prepare: tasks/prepare_${id}.sh
+    timeout: 5m
 
 # each scorer is a standalone uv script scorers/scorer_<id>.py (shared helpers
 # in scorers/_lib.py). pats execs it directly; first stdout line = float [0,1]
@@ -172,6 +178,9 @@ scorers:
   - {id: hint-format-compat,          score: "scorers/scorer_${id}.py"}
   - {id: prefer-format-compat,        score: "scorers/scorer_${id}.py"}
   - {id: essential-list-on-v1,        score: "scorers/scorer_${id}.py"}
+  # help-suite scorers (transcript-only, no expected files).
+  - {id: usage-printed,               score: "scorers/scorer_${id}.py"}
+  - {id: mason-stops-clean,           score: "scorers/scorer_${id}.py"}
 
 # suites: run = agents x tasks, score = tasks x scorers, both within the suite.
 # every id explicit (no wildcards); pats' orphan check errors on any task /
@@ -215,3 +224,7 @@ suites:
       - hint-format-compat
       - prefer-format-compat
       - essential-list-on-v1
+  - id: help
+    agents: *all-agents
+    tasks: [mason-help]
+    scorers: [usage-printed, mason-stops-clean]
