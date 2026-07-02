@@ -6,6 +6,8 @@
 // skill-discovery dir. opencode also gets real command .md files for its loader.
 // NOTE: no install-state tracking -- re-install skips files that differ from
 // source (warns to use --force) and never silently clobbers local edits.
+// --force is a clean per-skill reinstall: it drops <base>/<skill> then rewrites,
+// so stale files vanish. scoped to the skill dir, never the whole skills base.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -43,7 +45,7 @@ options:
   --agents <list>   comma-separated: ${SUPPORTED.join(', ')} (default: auto-detect)
   --target <dir>    install into <dir> (default: git root, else cwd)
   --dry-run         show what would change, write nothing
-  --force           overwrite files that differ from the skill source
+  --force           clean reinstall: drop each skill dir, then write it anew
   --quiet, -q       suppress per-file logs (warnings still print)
   --help, -h        show this help
 
@@ -98,6 +100,17 @@ function placeFile(srcContent, dst, opts, logs, warns, mode) {
   logs.push(`wrote: ${rel}`);
 }
 
+// --force does a clean reinstall of one skill: drop <base>/<skill> then write anew,
+// so files removed from source don't linger. scoped to the skill dir -- sibling
+// skills (and anything else under the skills base) are left untouched.
+function wipeSkill(dir, opts, logs) {
+  if (!fs.existsSync(dir)) return;
+  const rel = path.relative(opts.target, dir);
+  if (opts.dryRun) { logs.push(`would drop: ${rel}/`); return; }
+  fs.rmSync(dir, { recursive: true, force: true });
+  logs.push(`dropped: ${rel}/`);
+}
+
 function copyTree(srcRoot, dstRoot, opts, logs, warns) {
   for (const src of listFiles(srcRoot)) {
     const dst = path.join(dstRoot, path.relative(srcRoot, src));
@@ -140,7 +153,9 @@ function install(opts) {
     logs.push(`-- ${agent} --`);
     for (const skill of skills) {
       const src = path.join(SKILLS_ROOT, skill);
-      copyTree(src, path.join(opts.target, SKILL_BASE[agent], skill), opts, logs, warns);
+      const dstRoot = path.join(opts.target, SKILL_BASE[agent], skill);
+      if (opts.force) wipeSkill(dstRoot, opts, logs);
+      copyTree(src, dstRoot, opts, logs, warns);
       if (agent === 'opencode') {
         // single dispatcher so `/<skill> <subcmd>` works like in claude
         const dispatcher = Buffer.from(
