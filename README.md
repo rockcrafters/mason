@@ -24,7 +24,7 @@ npx github:rockcrafters/mason install --agents claude
 --agents <list>   comma-separated: claude, pi, copilot, opencode, codex (default: auto-detect)
 --target <dir>    install into <dir> (default: git root, else cwd)
 --dry-run         show what would change, write nothing
---force           overwrite files that differ from the skill source
+--force           clean reinstall: drop each skill dir, then write it anew
 --quiet, -q       suppress per-file logs (warnings still print)
 --help, -h        show this help
 ```
@@ -32,7 +32,8 @@ npx github:rockcrafters/mason install --agents claude
 The installer copies each self-contained skill tree into the agent's skill-discovery directory
 (`.claude/skills/<skill>`, `.pi/skills/<skill>`, `.github/skills/<skill>`, `.opencode/skills/<skill>`, `.codex/skills/<skill>`);
 opencode additionally gets a generated `.opencode/command/<skill>.md`. Re-running skips up-to-date
-files and leaves locally-modified ones alone unless `--force` is set.
+files and leaves locally-modified ones alone; `--force` drops each known skill dir and writes it
+fresh (scoped per skill -- foreign skills under the same base survive).
 
 Claude code users can alternatively add it as a plugin via the marketplace (`.claude-plugin/`).
 
@@ -40,7 +41,7 @@ Claude code users can alternatively add it as a plugin via the marketplace (`.cl
 
 `mason` is an umbrella kit for chisel / rocks work. each capability area is one self-contained skill
 under `mason/skills/`; the installer copies each per agent (no committed per-agent adapters). today
-there is one skill, `chisel-releases`.
+there are two: `chisel-releases` (the substance) and `mason` (a `/mason` usage stub that prints help).
 
 ```
 mason/
@@ -61,8 +62,11 @@ mason/
         check-diff.py              # append-only regressions (removed SDF / slice / path) vs a base ref
         review-diff.py             # run the three checks over a PR diff -> report + verdict + exit code
       schemas/commands.manifest.yaml  # command index (command -> file)
+    mason/                         # umbrella /mason skill -- prints usage/help, no actions
+      SKILL.md
   .claude-plugin/                  # claude code plugin manifest
 scripts/cli.js                     # the npx installer (installs every skill under mason/skills/)
+tests/scripts/                     # pytest (script checks) + node --test (installer) -- see makefile
 package.json                       # bin: mason -> scripts/cli.js
 ```
 
