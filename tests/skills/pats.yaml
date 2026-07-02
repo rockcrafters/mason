@@ -190,8 +190,9 @@ scorers:
   # help-suite scorers (transcript-only, no expected files).
   - {id: usage-printed,               score: "scorers/scorer_${id}.py"}
   - {id: mason-stops-clean,           score: "scorers/scorer_${id}.py"}
-  # refusal-suite scorer (transcript + collected slice, no expected file).
+  # refusal-suite scorers (transcript + collected slice, no expected file).
   - {id: refuses-nonexistent,         score: "scorers/scorer_${id}.py"}
+  - {id: refusal-verified,            score: "scorers/scorer_${id}.py"}
 
 # suites: run = agents x tasks, score = tasks x scorers, both within the suite.
 # every id explicit (no wildcards); pats' orphan check errors on any task /
@@ -242,4 +243,4 @@ suites:
   - id: refusal
     agents: *all-agents
     tasks: [frobnicator]
-    scorers: [refuses-nonexistent]
+    scorers: [refuses-nonexistent, refusal-verified, orientation-called]
