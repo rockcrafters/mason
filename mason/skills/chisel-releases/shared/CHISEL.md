@@ -45,8 +45,10 @@ Live release list: repo [README.md](https://github.com/canonical/chisel-releases
 | Version | Branches | Min chisel | Key additions |
 |---------|----------|------------|---------------|
 | **v1** | `ubuntu-20.04`, `-22.04`, `-24.04` | any | Separate `v2-archives:` for pro/esm |
-| **v2** | `ubuntu-25.10` | >= v1.2.0 | Pro archives unified under `archives:` via `pro:` subkey. Adds `prefer:`. Backports arch-gated essentials via `v3-essential:` |
-| **v3** | `ubuntu-26.04` | >= v1.4.0 | Adds `hint:` on slices. `essential:` may be a **map** (`<slice>: {arch: ...}`), giving arch-gated deps natively -- so `v3-essential:` is not used here |
+| **v2** | `ubuntu-25.10` | >= v1.2.0 | Pro archives unified under `archives:` via `pro:` subkey. Adds `prefer:` |
+| **v3** | `ubuntu-26.04` | >= v1.4.0 | Adds `hint:` on slices. `essential:` **must** be a map (`<slice>:` / `<slice>: {arch: ...}`) -- the list form is a parse error, and `v3-essential:` is rejected |
+
+(`v3-essential:` -- the arch-gated backport -- is gated by chisel version, >= 1.3.0, not by format; it is valid on v1 and v2 branches alike.)
 
 Key fields: `format:` (gates available features), `archives.ubuntu.suites[0]` (codename, e.g. `noble`), `archives.ubuntu.version` (mirrors branch suffix), `maintenance.end-of-life` (date).
 
@@ -60,14 +62,14 @@ Key fields: `format:` (gates available features), `archives.ubuntu.suites[0]` (c
 |-----|------|----------|-------------|
 | `package` | string | Required | Deb package name; **must match filename stem** (`slices/foo.yaml` -> `package: foo`) |
 | `archive` | string | Optional | Selects archive from `chisel.yaml`'s `archives:`. Omit for default |
-| `essential` | list of `<pkg>_<slice>` | Optional | Applied to **every** slice in the file. Typically `<pkg>_copyright` |
+| `essential` | list (v1/v2) / map (v3) of `<pkg>_<slice>` | Optional | Applied to **every** slice in the file. Typically `<pkg>_copyright` |
 | `slices` | map name -> body | Required | The slice definitions |
 
 ### Per-slice Keys
 
 | Key | Type | Description |
 |-----|------|-------------|
-| `essential` | list of `<pkg>_<slice>` | Cross-package dependencies |
+| `essential` | list (v1/v2) / map (v3) of `<pkg>_<slice>` | Cross-package dependencies |
 | `contents` | map path -> entry options | Paths this slice installs. **Paths must be lexicographically sorted** |
 | `mutate` | string (Starlark) | Mutation script run after all slices installed |
 | `hint` | string, <= 40 chars | v3+ only. Length + printable-chars enforced by chisel core (parse error since v1.4.0); the noun-phrase _style_ is checked by `validate-hints` CI. Shown in `chisel find`/`info` output |
@@ -85,14 +87,16 @@ Key fields: `format:` (gates available features), `archives.ubuntu.suites[0]` (c
 | `arch` | string or list | Restrict to architectures: `amd64`, `arm64`, `armhf`, `i386`, `ppc64el`, `riscv64`, `s390x` |
 | `mutable` | bool | Path may be modified by `mutate:` |
 | `until` | `"mutate"` | Available during install; removed after mutate phase |
-| `generate` | `"manifest"` | Chisel writes manifest at this path |
-| `prefer` | string, **v2+** | Resolve cross-package path conflicts |
+| `generate` | `"manifest"` | Path must be a directory glob ending `/**` (no other wildcards, no other options); chisel writes the manifest inside it |
+| `prefer` | string, **v2+** | Resolve cross-package path conflicts. Value = name of **another** package in the release that also declares the path (that package wins); not your own package, not usable on globs |
 
 ### Wildcard Patterns
 
 - `?` -- any single character except `/`
 - `*` -- zero or more characters except `/`
 - `**` -- zero or more characters including `/`
+
+Wildcard paths accept only `until:` and `arch:` as entry options -- combining a glob with `copy`/`make`/`text`/`symlink`/`mode`/`mutable`/`prefer` is a parse error. Name the path explicitly instead.
 
 ### `mutate:` Semantics
 
@@ -114,15 +118,15 @@ Some deps only apply on certain arches. How you express that depends on `format:
     dotnet-sdk-aot-10.0_libs: {arch: [amd64, arm64]}
   ```
 
-- **v3** -- native: `essential:` itself may be a **map**, so per-entry `{arch: ...}` goes there directly. `v3-essential:` is not used on v3.
+- **v3** -- native: `essential:` itself **must** be a map (the list form is a chisel parse error: _"essential expects a map"_). Entries without arch gating are bare map keys; `{arch: ...}` values only where gated. `v3-essential:` is **rejected** on v3 (parse error) -- when forward-porting to a v3 branch, fold its entries into the `essential:` map.
 
   ```yaml
   essential:
-    libc6_libs: {}
+    libc6_libs:
     dotnet-sdk-aot-10.0_libs: {arch: [amd64, arm64]}
   ```
 
-On v3 a plain string-list `essential:` is still valid when no arch gating is needed (most SDFs); reach for the map form only when an entry needs `arch:`. Match the target branch's prevailing style.
+Every SDF on `ubuntu-26.04` uses the map form, arch-gated or not -- there is no list-form `essential:` on a v3 branch.
 
 ### `hint:` style (v3+)
 
@@ -138,7 +142,7 @@ e.g. `hint: System log viewer` (not `hint: Views system logs`).
 
 ### Manifest & Pro Archives
 
-- **Manifest**: emit at any path declared `generate: manifest`. Convention: `base-files_chisel` writes `/var/lib/chisel/manifest.wall`. Only touch when slicing `base-files`.
+- **Manifest**: convention is `base-files_chisel` declaring `/var/lib/chisel/**: {generate: manifest}`, which makes chisel produce `/var/lib/chisel/manifest.wall`. Only touch when slicing `base-files`.
 - **Pro slices**: SDF has `archive: <name>` -> `pro:`-tagged archive in `chisel.yaml` (`fips`, `fips-updates`, `esm-apps`, `esm-infra`).
 
 ## Chisel CLI
@@ -150,7 +154,7 @@ chisel info <pkg>_<slice>                                                 # insp
 chisel debug check-release-archives --release <ref>                       # download all pkgs, report cross-package path conflicts
 ```
 
-`--release`: `ubuntu-XX.XX` (online branch), absolute path (local checkout), or omit (host `/etc/os-release`).
+`--release`: `ubuntu-XX.XX` (online branch), a directory path -- anything containing a `/`, e.g. `./` for the current checkout -- or omit (host `/etc/os-release`). On a devel (unstable) or EOL (unmaintained) branch, add `--ignore=unstable` / `--ignore=unmaintained` or `cut` errors out.
 
 ## Inspecting the Repo Without a Full Checkout
 
@@ -201,7 +205,7 @@ Names are convention but reviewers enforce them. Use:
 | `rules` | udev / polkit rules (e.g. `/usr/lib/udev/rules.d/*.rules`) |
 | `dev` | Development files (headers + `.so` dev symlinks) in the by-function layout |
 
-When the deb already names `<pkg>-core` (e.g. `git-core`), keep the name verbatim.
+When the deb already names `<pkg>-core` (e.g. `fonts-dejavu-core`), keep the name verbatim.
 
 ## Exclude by Default
 
@@ -224,8 +228,8 @@ Always use Debian arch names in `arch:` fields: `amd64`, `arm64`, `armhf`, `i386
 ## Multiarch Quirks
 
 - **`binutils-common` per-arch** despite `Architecture: all`-looking contents. Don't assume one SDF covers all arches without checking.
-- **Cross-toolchain packages** (`<tool>-<triple>-linux-gnu`, e.g. `binutils-aarch64-linux-gnu`) ship prefixed binaries (`aarch64-linux-gnu-ld`). Unprefixed symlinks (`/usr/bin/ld -> aarch64-linux-gnu-ld`) are **not** in the cross deb -- consumers create them. Convention: arch-specific SDFs leave them out; top-level `binutils` SDF carries the unprefixed name with a `# -> ${ARCH_TRIPLET}-ld` comment.
-- **`/proc/self/exe` linker workaround** for chroot Java tests: `tests/spread/lib/link-proc`. Needed because chroot breaks `/proc/self/exe`.
+- **Cross-toolchain packages** (`<tool>-<triple>-linux-gnu`, e.g. `binutils-aarch64-linux-gnu`) ship prefixed binaries (`aarch64-linux-gnu-ld`). Unprefixed symlinks (`/usr/bin/ld -> aarch64-linux-gnu-ld`) are **not** in the cross deb -- consumers create them. Convention: arch-specific SDFs leave them out; top-level `binutils` SDF carries the unprefixed name with a `# Symlink to ${ARCH_TRIPLET}-ld` comment.
+- **`/proc/self/exe` workaround** for chroot Java tests (chroot breaks `/proc/self/exe`, which the JVM launcher reads): inside the rootfs, `mkdir -p "${rootfs}/proc/self" && ln -sf <path-to-java-binary> "${rootfs}/proc/self/exe"` -- see the openjdk `task.yaml` files for the convention.
 
 ## Cross-Release Differences
 
@@ -237,7 +241,7 @@ SDFs for the same package differ across Ubuntu release branches. Forward-porting
 | **t64 transition** | `libssl3` -> `libssl3t64` | Ubuntu 24.04+ renamed libraries for 64-bit `time_t`. Update `essential` deps and copyright refs |
 | **Package splits/renames** | Transitional packages, new soname packages | May need entirely different SDF structure or filename |
 | **Soname bumps** | `librocksdb9.11` -> `librocksdb10` | Old SDF deleted (archive no longer carries it); new SDF with new filename |
-| **Essential syntax** | List (`- foo_bar`) vs map (`foo_bar:`) | v3 branches may use map syntax in `essential:`. Match the convention of the target branch |
+| **Essential syntax** | List (`- foo_bar`) vs map (`foo_bar:`) | v3 branches **must** use map syntax in `essential:` (list form is a parse error); v1/v2 use the list |
 | **Slice granularity** | `bashbug` inline in `bins` (24.04) vs separate `bashbug` slice (26.04) | Newer releases may demand finer-grained decomposition |
 | **New/removed files** | New config files, removed scripts | `.deb` contents change between releases. Some paths exist in one release but not another |
 | **Dependency changes** | New deps added, old deps dropped | `Depends:` may differ. Always re-check with `deb-list.py` or `apt-cache depends` |
@@ -264,12 +268,12 @@ rootfs="$(install-slices <pkg>_<slice> [<pkg2>_<slice2> ...])"
 
 What it does:
 1. Creates a temporary directory for the rootfs.
-2. Runs `chisel cut --release "$PROJECT_PATH" --root "$rootfs" $slices` -- validates against the **local checkout**.
+2. Runs `chisel cut --ignore=unstable --ignore=unmaintained --release "$PROJECT_PATH" --root "$rootfs" $slices` -- validates against the **local checkout**.
 3. Automatically appends `base-files_chisel` to every cut (for manifest generation). You do not need to include it.
 4. Retries on transient archive fetch failures (up to 3 attempts).
 5. Prints the rootfs path to stdout.
 
-This is the same operation as manual `chisel cut --release ./ --root <dir>` but wrapped with retry logic and manifest support.
+NOTE: the `--ignore` flags mean install-slices succeeds on devel/EOL branches where a bare manual `chisel cut` errors -- pass them yourself when testing manually on such a branch.
 
 ### Two-layer testing model
 
@@ -287,7 +291,7 @@ Sliced rootfs is minimal. Tests that need more than bare files must set up the c
 | Network (DNS) | `cp /etc/resolv.conf "${rootfs}/etc/"` |
 | `/dev/null` | `mkdir -p "${rootfs}/dev" && touch "${rootfs}/dev/null"` |
 | `/bin/sh` | `ln "${rootfs}/bin/bash" "${rootfs}/bin/sh"` (or whichever shell is available) |
-| `/proc/self/exe` (Java) | Use `tests/spread/lib/link-proc` helper |
+| `/proc/self/exe` (Java) | `mkdir -p "${rootfs}/proc/self" && ln -sf <java-binary> "${rootfs}/proc/self/exe"` (see openjdk task.yaml) |
 
 ### Backends
 
@@ -312,7 +316,7 @@ The Go source code defines what chisel actually does: how it parses SDFs, resolv
 The documentation source renders to <https://documentation.ubuntu.com/chisel/en/latest/>. It is the authoritative reference for SDF format, CLI usage, and slicing workflows.
 
 - Repo: <https://github.com/canonical/chisel-docs>
-- Raw page access pattern: `https://raw.githubusercontent.com/canonical/chisel-docs/main/docs/<path>.md`
+- Raw page access pattern: `https://raw.githubusercontent.com/canonical/chisel-docs/main/docs/<path>.md`; rendered at `https://documentation.ubuntu.com/chisel/latest/<path>/`
 - Key pages:
   - `how-to/slice-a-package.md` -- canonical slicing workflow
   - `reference/chisel-releases/slice-definitions.md` -- SDF format specification
@@ -320,6 +324,8 @@ The documentation source renders to <https://documentation.ubuntu.com/chisel/en/
   - `explanation/slice-design-approaches.md` -- grouping-by-content vs grouping-by-function
   - `explanation/slices.md` -- conceptual overview of slices
   - `reference/cmd/cut.md` -- `chisel cut` CLI reference
+  - `reference/manifest.md` -- manifest format
+  - `how-to/install-pro-package-slices.md` -- pro slices
 
 ### 3. `canonical/chisel-releases` (existing slices & conventions)
 
@@ -327,27 +333,14 @@ The collection of published SDFs is the ground truth for conventions, naming pat
 
 - Repo: <https://github.com/canonical/chisel-releases>
 - Key files on each release branch: `chisel.yaml`, `slices/bash.yaml`, `slices/base-files.yaml`, `CONTRIBUTING.md`
+- `README.md` on `main` carries the live release-branch list
 - CI workflows in `.github/` define the automated checks
+
+Also: chisel-releases navigator <https://canonical.github.io/chisel-releases-navigator/>; Ubuntu release schedule <https://wiki.ubuntu.com/Releases>.
 
 ### Precedence
 
 When sources conflict: **tool behaviour > chisel-docs > chisel-releases conventions > this file**.
-
-## External References
-
-- Chisel source: <https://github.com/canonical/chisel>
-- Chisel docs: <https://documentation.ubuntu.com/chisel/latest/>
-  - How-to slice a package: <https://documentation.ubuntu.com/chisel/latest/how-to/slice-a-package/>
-  - SDF reference: <https://documentation.ubuntu.com/chisel/latest/reference/chisel-releases/slice-definitions/>
-  - `chisel.yaml` reference: <https://documentation.ubuntu.com/chisel/latest/reference/chisel-releases/chisel.yaml/>
-  - Manifest reference: <https://documentation.ubuntu.com/chisel/latest/reference/manifest/>
-  - `cut` CLI reference: <https://documentation.ubuntu.com/chisel/latest/reference/cmd/cut/>
-  - Pro slices how-to: <https://documentation.ubuntu.com/chisel/latest/how-to/install-pro-package-slices/>
-- chisel-releases repo: <https://github.com/canonical/chisel-releases>
-  - `CONTRIBUTING.md`: <https://github.com/canonical/chisel-releases/blob/main/CONTRIBUTING.md>
-  - `README.md` (live release list): <https://github.com/canonical/chisel-releases/blob/main/README.md>
-- chisel-releases navigator: <https://canonical.github.io/chisel-releases-navigator/>
-- Ubuntu release schedule: <https://wiki.ubuntu.com/Releases>
 
 ---
 

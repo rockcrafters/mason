@@ -25,11 +25,11 @@ scripts/review-diff.py --base <target-branch>
 
 It finds the changed SDFs and runs the three checkers over them, then prints findings grouped by severity plus a verdict, and exits non-zero if anything `block`s (the same command a CI PR-review job would call). The three it drives, also runnable on their own:
 
-- `scripts/check-slice.py slices/<pkg>.yaml` -- static conventions: sorting, naming, absolute paths, copyright presence, clutter exclusion, arch names, version-gated fields (`hint`/`prefer`/`v3-essential`/essential-as-map), and `hint:` length + style (the chisel-core 40-char cap and the `validate-hints` phrasing rules). Reads `format:` from `./chisel.yaml` (or pass `--branch ubuntu-XX.XX`).
+- `scripts/check-slice.py slices/<pkg>.yaml` -- static conventions: sorting, naming, absolute paths, duplicate contents keys, copyright presence, clutter exclusion, arch names, version-gated fields (`hint`/`prefer`/`v3-essential`/essential-as-map/essential-as-list), and `hint:` length + mechanical style (the noun-phrase rule needs NLP -- `validate-hints` CI covers that, not this script). Reads `format:` from `./chisel.yaml` (or pass `--branch ubuntu-XX.XX`).
 - `scripts/check-test.py slices/<pkg>.yaml` -- test coverage: `warn` if there's no test or it exercises none of the binaries; `info` listing untested binaries under partial coverage (normal for suites and alternatives symlinks -- judge whether the gaps matter).
-- `scripts/check-diff.py --base <target-branch>` -- append-only regressions: any removed SDF, slice, or path (the `removed-slices` CI gate fails on these unless the package left the archive).
+- `scripts/check-diff.py --base <target-branch>` -- append-only regressions: a removed SDF or slice fails the `removed-slices` CI gate (unless the package left the archive); a content path dropped from a kept slice has no CI gate but is a regression reviewers reject.
 
-Fold the output straight into your report: map `block` -> blocking, `warn` -> should-fix, `info` -> judge. Then spend your own judgement on what they can't check: dependency accuracy, test *depth*, design, and forward-porting.
+Fold the output straight into your report: map `block` -> blocking, `warn` -> should-fix, `info` -> judge. Then spend your own judgement on what they can't check: dependency accuracy, test *depth*, design, forward-porting, and hint phrasing (noun phrase, no finite verbs -- see `shared/CHISEL.md`).
 
 None cut a rootfs or run tests -- `chisel cut` (the `install-slices` CI check) and spread cover those.
 
@@ -106,13 +106,7 @@ These are hard gates. Reject if violated:
 
 ## Schema Version Compliance
 
-Check `format:` in `chisel.yaml` on the target branch:
-
-- `hint:` is **v3+ only**. Reject if used on v1/v2 branches.
-- `prefer:` is **v2+ only**. Reject if used on v1 branches.
-- `essential:`-as-map is **v3+ only**. On v1/v2 `essential:` must be a flat string list.
-- `v3-essential:` is the **pre-v3 backport** for arch-gated essentials (v1/v2, needs chisel >= 1.3.0). On v3 it's obsolete -- use `essential:`-as-map instead.
-- `pro:` under `archives:` is v2+ unified. v1 uses separate `v2-archives:` block.
+`check-slice.py` gates these deterministically (hint/prefer/essential-shape/v3-essential vs `format:`) -- fold its output in; the CHISEL.md schema-versions table is the reference. The one gate the script can't see: `pro:` under `archives:` is v2+; v1 uses a separate `v2-archives:` block.
 
 ## Testing Requirements
 
@@ -121,7 +115,7 @@ Check `format:` in `chisel.yaml` on the target branch:
 - **~80% coverage** is a soft target mentioned in PR coverage comments. Not a hard gate but actively watched.
 - **Functional slices need functional tests.** `--version` alone is insufficient for applications. Test actual functionality.
 - **One rootfs per test.** Reusing a rootfs across tests lets leftover slices mask a missing dependency -- push to split into a fresh `install-slices` per test.
-- **Hermetic tests.** No external hosts, no apt-installing extras, inputs generated inline. Bounded waits (no naked `sleep`/infinite retry). `grep -Fiq` for assertions.
+- **Hermetic by default.** Inputs generated inline, no apt-installing extras, bounded waits (no naked `sleep`/infinite retry), `grep -Fiq` for assertions. Exception: packages whose function IS the network path (CA bundles, TLS/http clients) may hit one stable well-known endpoint (e.g. `https://example.com`) -- upstream does.
 - Tests live at `tests/spread/integration/<pkg>/task.yaml`.
 
 ## Forward-Port Requirements
@@ -142,26 +136,6 @@ Defer to [`CONTRIBUTING.md`](https://github.com/canonical/chisel-releases/blob/m
 - **Two maintainer approvals** required, CLA signed, green CI before review.
 - **No force-push** after review comments.
 - **One cohesive change per PR.** Don't mix unrelated slice definitions.
-
-## Common Rejection Reasons
-
-1. Unsorted `contents` paths or unsorted `essential:` entries
-2. Missing `copyright` slice or not in global `essential:`
-3. `Recommends:`/`Suggests:` included as dependencies
-4. Speculative slices with no demonstrated need
-5. Use-case-specific comments ("for app X")
-6. `bin`/`lib` instead of `bins`/`libs`
-7. Explicit `symlink:` for paths the deb already ships
-8. Missing tests for binaries in `bins` slice
-9. Invalid arch names (`x86_64`/`aarch64` instead of `amd64`/`arm64`)
-10. v3 features (`hint:`) used on v1/v2 branches
-11. Missing forward-port PRs for newer release branches
-12. Files removed from existing published slice (regression)
-13. `package:` field doesn't match YAML filename stem
-14. Clutter shipped: man pages (`/usr/share/man/`), shell completions, `/usr/share/doc/**` other than `copyright` + `NOTICE`/`LICENSE`-type legal files, changelogs, examples, `doc-base`/`lintian` metadata (see "Exclude by Default" in `shared/CHISEL.md`)
-15. Over-included deps with no demonstrated need, or config for a tool not sliced in chisel-releases
-16. Patch-level version globs, or overly broad globs that collide across packages
-17. Tests reuse one rootfs (leftover slices mask missing deps) or depend on external hosts
 
 ## Copilot Warning
 

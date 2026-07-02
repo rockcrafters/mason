@@ -76,6 +76,8 @@ Before designing anything, check whether the package already has slices on **oth
 
 If no existing SDFs are found on any branch, this is a net-new package -- proceed to Step 3.
 
+If the fetches fail (offline / egress-restricted environment), don't stall: treat the package as net-new, derive everything from the local checkout + `deb-list.py`, and note the skipped cross-release check in your final report.
+
 ### Step 3: Build the Full Dependency Tree
 
 Before inspecting or designing anything, build the complete dependency tree. Dependencies MUST be sliced before the target package.
@@ -108,7 +110,7 @@ This fetches the `.deb` straight from the ubuntu mirror (reading the suite from 
 Reading the output:
 - `[l] path -> target` means the deb ships that symlink -- use a bare path entry, no explicit `symlink:` needed.
 - `[x]` marks executables (go in `bins`); `[f]` marks regular files.
-- Add `mode:` to a slice entry only when the permission is non-standard (not `0644`/`0755`/`0777`).
+- Add `mode:` to a slice entry only when the permission is non-standard (not `0644`/`0755`/`0777`). Never on a glob path -- wildcard entries accept only `until:`/`arch:` (anything else is a parse error); name the file explicitly instead.
 - If `--scripts` shows `postinst` calling `update-alternatives`, `ldconfig`, or `update-mime-database`, those side-effects don't run in a chisel rootfs -- either drop the dep or write a `mutate:` equivalent.
 - Run once per target arch when multiarch differences are expected (`deb-list.py libfoo amd64`, then `deb-list.py libfoo arm64`).
 - **Ignore the clutter.** deb-list prints everything the deb ships, including man pages, shell completions, `/usr/share/doc/**`, changelogs, examples. Those are excluded by convention (see "Exclude by Default" in `shared/CHISEL.md`) -- under `/usr/share/doc/` ship only legal files (`copyright`, and `NOTICE`/`LICENSE`-type notices where present).
@@ -189,7 +191,7 @@ Start from a draft rather than a blank file:
 scripts/deb-list.py <package> --sdf > slices/<package>.yaml
 ```
 
-It groups the deb's files into `bins`/`libs`/`config`/`headers`/`var`/`copyright`, drops clutter (man pages, completions, docs), globs multiarch lib dirs (`*-linux-*`), wires the `copyright` slice + global `essential` (handling shared-copyright doc-dir symlinks), and sorts contents -- so `check-slice.py` passes on it out of the box. Ambiguous `/usr/lib` and `/usr/share` files are left as `# unplaced` comments for you to place. Then do the judgement the draft can't: add each slice's cross-package `essential:` deps (from Step 3), place the `# unplaced` files into the right slice (`data`/`scripts`/`var`/...) or drop them, reproduce maintainer-script effects, and restructure into functional slices (`core`/`standard`/...) for complex packages. The target shape:
+It groups the deb's files into `bins`/`libs`/`config`/`headers`/`var`/`copyright`, drops clutter (man pages, completions, docs), globs multiarch lib dirs (`*-linux-*`), wires the `copyright` slice + global `essential` (handling shared-copyright doc-dir symlinks), and sorts contents -- so `check-slice.py` passes on it out of the box. Ambiguous `/usr/lib` and `/usr/share` files are left as `# unplaced` comments for you to place. Then do the judgement the draft can't: add each slice's cross-package `essential:` deps (from Step 3), place the `# unplaced` files into the right slice (`data`/`scripts`/`var`/...) or drop them, reproduce maintainer-script effects, and restructure into functional slices (`core`/`standard`/...) for complex packages. The target shape (list-form `essential:` -- v1/v2 branches):
 
 ```yaml
 package: <package-name>
@@ -214,6 +216,19 @@ slices:
       /usr/share/doc/<package-name>/copyright:
 ```
 
+**On a v3 branch (`ubuntu-26.04`) every `essential:` must be a map, not a list** -- `chisel cut` rejects the list form with _"essential expects a map"_. Same shape, map keys:
+
+```yaml
+essential:
+  <package-name>_copyright:
+
+slices:
+  bins:
+    essential:
+      <dep-package>_libs:
+      <package-name>_config:
+```
+
 Key rules:
 - `package:` must match the filename stem
 - File-level `essential:` lists `<pkg>_copyright` so every slice transitively ships it
@@ -234,69 +249,59 @@ After writing the SDF, run the bundled deterministic linter -- do not eyeball th
 scripts/check-slice.py slices/<package>.yaml
 ```
 
-It reads `format:` from `./chisel.yaml` automatically (or pass `--format N` / `--branch ubuntu-XX.XX`). It reports `block` (fix before commit -- CI/parse failure), `warn` (reviewers reject), `info` (nit / skipped). **Fix every `block` and every `warn` you can't justify** before moving on. The rules it enforces:
+It reads `format:` from `./chisel.yaml` automatically (or pass `--format N` / `--branch ubuntu-XX.XX`). It reports `block` (fix before commit -- CI/parse failure), `warn` (reviewers reject), `info` (nit / skipped). **Fix every `block` and every `warn` you can't justify** before moving on.
 
-1. **Sort `contents` paths** in bytewise ASCII (lexicographic) order within each slice.
-2. **Sort `essential` entries** the same way, in every slice's `essential:` (and the map keys, on v3). CI checks this with `LC_COLLATE=C sort -C`.
-3. **Place `essential` (global)** at the top of the file, right after `package:`.
-4. **Place the `copyright` slice** at the bottom of the `slices:` block.
-5. **Slice names**: lowercase, at least 3 characters, only `a-z`, `0-9`, `-`, must start with a letter.
-6. **Paths must be absolute**, starting with `/`.
-7. **Multiarch lib glob**: use `*-linux-*`, not explicit triples. E.g. `/usr/lib/*-linux-*/libfoo.so.1:`.
-8. **Drop trailing `*`** for single-version sonames: `libfoo.so.1:` not `libfoo.so.1*:`.
-9. **Pin only major.minor in version globs**, never the patch: `/usr/src/rustc-1.93.*/**`, `/usr/lib/perl5/*/`. Patch-level pins break on the next package update.
-10. **Keep globs narrow.** A broad `**` or a bare `*.pm` can collide with hundreds of other packages' paths. Add another path level to scope it (`.../perl5/*/auto/DBI/DBI.so:`), and `grep -r "/shared/path" slices/` before declaring a path more than one package could own.
-11. **Arch names**: valid lowercase Debian names only (`amd64`, `arm64`, `armhf`, `i386`, `ppc64el`, `riscv64`, `s390x`) -- never `x86_64`/`aarch64`. Write the list inline (`{arch: [amd64, arm64]}`); ordering is a nit, not a gate.
-12. **Inline-style** for short options: `/path: {arch: [amd64, arm64]}`.
-13. **Annotate explicit symlinks** with comments: `/usr/bin/foo:  # Symlink to ../lib/foo/foo`.
-14. **yamllint gates** (`.github/yamllint.yaml`): 2-space indent, lines <= 100 chars, at most one consecutive blank line, comments aligned to content, at most one space inside `{ }`/`[ ]`.
+The script mechanically owns: sorting (contents paths and `essential` entries, bytewise ASCII -- CI checks with `LC_COLLATE=C sort -C`), slice-name validity, absolute paths, duplicate contents keys, arch names (list *order* there is a nit, not a gate), clutter exclusions, copyright presence, the version-gated fields (`hint`/`prefer`/`v3-essential`/essential-as-map/essential-as-list), and `hint:` length + style. Don't restate its work -- run it.
 
-`check-slice.py` checks rules 1, 2, 5, 6, 11 mechanically, plus the Step 4 clutter exclusions, copyright presence, the version-gated fields (`hint`/`prefer`/`v3-essential`/essential-as-map), and `hint:` length + style. Rules 3, 4, 7, 8, 9, 10, 12, 13, 14 it can't judge -- those are on you.
+The rules it can't judge -- these are on you:
+
+1. **Place `essential` (global)** at the top of the file, right after `package:`.
+2. **Place the `copyright` slice** at the bottom of the `slices:` block.
+3. **Multiarch lib glob**: use `*-linux-*`, not explicit triples. E.g. `/usr/lib/*-linux-*/libfoo.so.1:`.
+4. **Drop trailing `*`** for single-version sonames: `libfoo.so.1:` not `libfoo.so.1*:`.
+5. **Pin only major.minor in version globs**, never the patch: `/usr/src/rustc-1.93.*/**`, `/usr/lib/perl5/*/`. Patch-level pins break on the next package update.
+6. **Keep globs narrow.** A broad `**` or a bare `*.pm` can collide with hundreds of other packages' paths. Add another path level to scope it (`.../perl5/*/auto/DBI/DBI.so:`), and `grep -r "/shared/path" slices/` before declaring a path more than one package could own.
+7. **Inline-style** for short options: `/path: {arch: [amd64, arm64]}`.
+8. **Annotate explicit symlinks** with comments: `/usr/bin/foo:  # Symlink to ../lib/foo/foo`.
+9. **yamllint gates** (`.github/yamllint.yaml`): 2-space indent, lines <= 100 chars, at most one consecutive blank line, comments aligned to content, at most one space inside `{ }`/`[ ]`.
 
 ### Step 9: Test
 
-Testing is mandatory. Depth depends on what the package provides.
+Testing is mandatory. **Every package gets a spread test at `tests/spread/integration/<package>/task.yaml`** -- upstream ships one even for pure-library and data-only packages (`ca-certificates`, `base-passwd`, `fontconfig`, ...). The classification below controls test *depth* only, never whether the file exists.
 
 **Testing blocks commit.** Do NOT proceed to Step 11 (commit) without tests landed. A `feat:` slice and its `test:` tests form one series -- both must exist before you stop. If tests aren't feasible, leave the slice uncommitted and report why; do not commit the slice alone.
 
-#### Package classification
+#### Manual cut (always do this first)
 
-- **Library** (e.g. `libssl3`, `libc6`): verify `.so` files exist and are valid ELF. Minimal testing acceptable.
-- **Simple utility** (e.g. `grep`, `sed`): test `--version` + one representative functional test.
-- **Application / major software** (e.g. `python3`, `nginx`, `curl`, `git`): requires a **thorough test suite**.
-
-#### Manual testing (always do this first)
-
-Use the bundled `try-cut` helper to run a cut from the current checkout without managing the temp root manually:
+Use the bundled `try-cut` helper to verify the cut succeeds without managing the temp root manually (NOTE: it removes the rootfs on exit -- installability only):
 
 ```bash
 scripts/try-cut [--arch ARCH] <package>_<slice>
 ```
 
-Or manually:
+When you need to poke around the resulting rootfs (chroot in, inspect files), cut manually instead:
 
 ```bash
 mkdir rootfs/
 chisel cut --release ./ --root rootfs/ <package>_<slice>
 ```
 
-#### Thorough testing for applications
+#### Write the test suite
 
-For applications, CLI tools, servers, interpreters -- any package providing user-facing functionality:
-
-**Research phase** (before writing tests):
-1. Read the package documentation: feature set, CLI flags, config options, common use cases.
-2. Study the upstream test suite from the source package. Look for `test*/`, `tests/`, `t/` directories.
-3. Identify key functional areas. Each should have at least one test.
-4. Check runtime dependencies: does the software need `/etc/passwd`, `/tmp`, timezone data, locale data, etc.?
-
-**Write the test suite** at `tests/spread/integration/<package>/task.yaml`. Start from the scaffold rather than a blank file:
+Start from the scaffold rather than a blank file:
 
 ```bash
 scripts/scaffold-test.py slices/<package>.yaml > tests/spread/integration/<package>/task.yaml
 ```
 
-It emits one fresh rootfs per binary-bearing slice and a `chroot` line for every declared binary, so coverage is complete by construction. Then do the real work: replace each `--version` placeholder with a genuine functional check, add config/feature tests, and fill in the marker lines for any glob-matched binaries. The shape it produces:
+It emits one fresh rootfs per slice and a `chroot` line for every declared binary, so coverage is complete by construction. Then do the real work per package kind:
+
+- **Library** (e.g. `libssl3`): verify `.so` files exist and are valid ELF (`head -c4 | grep ELF`-style). Minimal depth acceptable -- but the task.yaml still exists.
+- **Data-only** (e.g. certificate stores, locale data, fonts): install the slice **together with a consumer slice** and prove the consumer can use the data (e.g. a TLS client verifying against the shipped CA bundle, a renderer loading the font). File-existence checks alone are weak; pair with a consumer where one exists.
+- **Simple utility** (e.g. `grep`, `sed`): `--version` + one representative functional test.
+- **Application / major software** (e.g. `python3`, `nginx`, `curl`, `git`): thorough suite. Research first: read the package docs (features, flags, config), study the upstream test suite (`test*/`, `tests/`, `t/` in the source package), identify key functional areas (each gets at least one test), and check runtime lookups (`/etc/passwd`, `/tmp`, timezone/locale data).
+
+The shape the scaffold produces:
 
 ```yaml
 summary: Integration tests for <package>
@@ -305,7 +310,7 @@ execute: |
   # <package>_bins: fresh rootfs so a missing dep can't hide behind another test.
   rootfs="$(install-slices <package>_bins)"
   chroot "$rootfs" <command> --version  # replace with a real functional check
-  # (for curl: fetch a URL; for python3: import core modules; for vim: edit a file)
+  # (for an http client: fetch a URL; for an interpreter: import core modules)
 ```
 
 **Test design principles**:
@@ -313,8 +318,9 @@ execute: |
 - **Test each functional slice.** If you have `bins` and `scripts`, both need tests.
 - **One rootfs per test.** Call `install-slices` afresh for each test rather than reusing one rootfs -- leftover slices from an earlier test mask a missing dependency in a later one. This is a standard reviewer request.
 - **Every binary in a `bins` slice must be exercised.** Reviewers reject untested binaries. A binary you can't drive fully still gets a skeleton test proving the dynamic linker resolves it -- run it and grep for its own usage/error text, e.g. `chroot "$rootfs" /usr/lib/foo/helper 2>&1 | grep -Fiq "usage"`.
-- **Untestable means unshippable.** Reviewers push to drop rather than ship untested slices.
-- **Hermetic.** No external hosts, no apt-installing extras into the test env. Generate any inputs (secrets, digests, fixtures) inline.
+- **Untestable means unshippable.** Reviewers push to drop rather than ship untested slices. (For data-only slices, the consumer pattern above is the test -- "no binaries" never means "no test".)
+- **Set up the chroot before weakening a test.** If a chroot command fails on missing `/dev/null`, `/bin/sh`, or DNS, fix the environment per the "Chroot environment patterns" table in `shared/CHISEL.md` -- do not retreat to file-existence checks.
+- **Hermetic by default.** Generate inputs (secrets, digests, fixtures) inline; never apt-install extras into the test env. Exception: when the package's function IS the network path (CA bundles, TLS/http clients), hitting one stable well-known endpoint (e.g. `https://example.com`) is accepted upstream -- copy `resolv.conf` in per the chroot patterns table.
 
 **Test hygiene** (recurring review nits):
 - Drop `--arch "$chisel_arch"` from `install-slices` on 26.04 -- it was a v2-era workaround, not needed there. Older branches may still want it.
@@ -343,6 +349,8 @@ curl -fsSL https://raw.githubusercontent.com/canonical/chisel-docs/main/docs/how
 curl -fsSL https://raw.githubusercontent.com/canonical/chisel-docs/main/docs/reference/chisel-releases/slice-definitions.md
 curl -fsSL https://raw.githubusercontent.com/canonical/chisel-docs/main/docs/reference/chisel-releases/chisel.yaml.md
 ```
+
+(rendered at `https://documentation.ubuntu.com/chisel/latest/<path>/` if you prefer. If these fetches fail -- offline / egress-restricted environment -- skip this step, rely on `shared/CHISEL.md` + `check-slice.py`, and note the skipped verification in your final report.)
 
 Check: does the SDF use any undocumented fields or patterns? Does the design match documented recommendations? Is the `format:` version compatible with all features used? Fix any discrepancy before committing; note deliberate divergence in your final report.
 
@@ -381,176 +389,47 @@ Do NOT dump full file contents or raw command output -- summarise.
 
 ---
 
-## Real-World Examples
+## Reference examples
 
-### Simple Binary Package (vim-tiny)
+Read live SDFs from the checkout -- they are canonical and can't go stale (Step 5 already mandates this):
 
-```yaml
-package: vim-tiny
+- **simple binary package**: `slices/vim-tiny.yaml` (bins + config + copyright)
+- **library package**: `slices/libc6.yaml` (multiarch lib globs, arch-gated entries)
+- **multi-slice package**: `slices/dpkg.yaml` (bins/config/tables/var split)
+- **mutate scripts in the wild**: `grep -l "mutate:" slices/*.yaml` (e.g. `slices/apt.yaml`, `slices/libpam-runtime.yaml`)
 
-essential:
-  - vim-tiny_copyright
-
-slices:
-  bins:
-    essential:
-      - libacl1_libs
-      - libc6_libs
-      - libselinux1_libs
-      - libtinfo6_libs
-      - vim-common_addons
-      - vim-common_config
-      - vim-tiny_config
-    contents:
-      /usr/bin/vim.tiny:
-
-  config:
-    contents:
-      /etc/vim/vimrc.tiny:
-
-  copyright:
-    contents:
-      /usr/share/doc/vim-tiny/copyright:
-```
-
-### Library Package (libc6)
+The one non-obvious shape worth showing -- the `mutate:` + `until: mutate` + `mutable:` triad for a file that must be *generated* from shipped inputs (schematic, not a real package):
 
 ```yaml
-package: libc6
+package: foo
 
 essential:
-  - libc6_copyright
-
-slices:
-  config:
-    contents:
-      /etc/ld.so.conf.d/*-linux-*.conf:
-
-  libs:
-    essential:
-      - base-files_lib
-    contents:
-      /usr/lib*/ld*.so.*:
-      /usr/lib/*-linux-*/ld*.so.*:
-      /usr/lib/*-linux-*/libc.so.*:
-      /usr/lib/*-linux-*/libdl.so.*:
-      /usr/lib/*-linux-*/libm.so.*:
-      /usr/lib/*-linux-*/libmvec.so.*: {arch: [amd64, arm64]}
-      /usr/lib/*-linux-*/libpthread.so.*:
-      /usr/lib/*-linux-*/libresolv.so.*:
-      /usr/lib/*-linux-*/librt.so.*:
-
-  copyright:
-    contents:
-      /usr/share/doc/libc6/copyright:
-```
-
-### Package with Mutation Scripts (ca-certificates)
-
-```yaml
-package: ca-certificates
-
-essential:
-  - ca-certificates_copyright
+  - foo_copyright
 
 slices:
   data:
-    essential:
-      - openssl_data
     contents:
-      /etc/ssl/certs/ca-certificates.crt: {text: FIXME, mutable: true}
-      /usr/share/ca-certificates/mozilla/: {until: mutate}
-      /usr/share/ca-certificates/mozilla/**: {until: mutate}
+      /etc/foo/merged.conf: {text: FIXME, mutable: true}   # placeholder, rewritten by mutate
+      /usr/share/foo/conf.d/: {until: mutate}              # inputs: present for the script,
+      /usr/share/foo/conf.d/**: {until: mutate}            # removed from the final rootfs
     mutate: |
-      certs_dir = "/usr/share/ca-certificates/mozilla/"
-      certs = [
-        content.read(certs_dir + path) for path in content.list(certs_dir)
-      ]
-      content.write("/etc/ssl/certs/ca-certificates.crt", "".join(certs))
+      dir = "/usr/share/foo/conf.d/"
+      parts = [content.read(dir + p) for p in content.list(dir)]
+      content.write("/etc/foo/merged.conf", "".join(parts))
 
   copyright:
     contents:
-      /usr/share/doc/ca-certificates/copyright:
-```
-
-### Multi-Slice Package (dpkg)
-
-```yaml
-package: dpkg
-
-essential:
-  - dpkg_copyright
-
-slices:
-  bins:
-    essential:
-      - diffutils_bins
-      - dpkg_config
-      - dpkg_tables
-      - dpkg_var
-      - libbz2-1.0_libs
-      - libc-bin_ldconfig
-      - libc6_libs
-      - liblzma5_libs
-      - libmd0_libs
-      - libselinux1_libs
-      - libzstd1_libs
-      - tar_tar
-      - zlib1g_libs
-    contents:
-      /usr/bin/dpkg:
-      /usr/bin/dpkg-deb:
-      /usr/bin/dpkg-divert:
-      /usr/bin/dpkg-maintscript-helper:
-      /usr/bin/dpkg-query:
-      /usr/bin/dpkg-realpath:
-      /usr/bin/dpkg-split:
-      /usr/bin/dpkg-statoverride:
-      /usr/bin/dpkg-trigger:
-      /usr/bin/update-alternatives:
-      /usr/libexec/dpkg/*:
-      /usr/sbin/start-stop-daemon:
-
-  config:
-    contents:
-      /etc/dpkg/dpkg.cfg:
-      /etc/dpkg/dpkg.cfg.d/:
-
-  tables:
-    contents:
-      /usr/share/dpkg/*table:
-
-  var:
-    contents:
-      /var/lib/dpkg/alternatives/:
-      /var/lib/dpkg/info/:
-      /var/lib/dpkg/parts/:
-      /var/lib/dpkg/updates/:
-
-  copyright:
-    contents:
-      /usr/share/doc/dpkg/copyright:
+      /usr/share/doc/foo/copyright:
 ```
 
 ---
 
 ## Common Pitfalls
 
-1. **Slicing the target before its dependencies.** Always build the dependency tree first and work bottom-up.
-2. **Including `Recommends:`/`Suggests:` in `essential:`.** Only `Depends:` matter. Reviewers reject the rest.
-3. **Forgetting transitive dependencies.** A binary might need libraries from packages not in the direct dependency list. Always check `ldd` output.
-4. **Not consulting the source package.** Binaries may perform runtime lookups for files not obvious from `.deb` contents alone.
-5. **Inconsistent naming.** Always check existing SDFs. Use `libs` not `lib`, `bins` not `bin`, etc.
-6. **Overly broad globs.** `/usr/lib/python3.*/foo/**` might conflict with other packages. Be specific.
-7. **Missing `copyright` slice.** Every SDF must have one; every other slice must depend on it.
-8. **Not reproducing maintainer scripts.** If `postinst` creates symlinks or generates files, your slices must do that too.
-9. **Explicit `symlink:` for paths the deb already ships.** Chisel preserves deb symlinks; only use `symlink:` for paths created by maintainer scripts.
-10. **Ignoring architecture differences.** Use `{arch: ...}` for arch-specific paths.
-11. **Not sorting contents paths.** Bytewise ASCII sort. Linters reject unsorted.
-12. **Shallow testing.** `--version` alone is not sufficient for applications. Every binary in `bins` must be exercised.
-13. **Adding speculative slices.** Only ship slices that are needed and testable. Speculative slices are rejected.
-14. **Use-case-specific comments.** Comments like "this slice exists for app X" are rejected. Describe what the slice ships.
-15. **Shipping clutter.** Man pages, shell completions, `/usr/share/doc/**` (except `copyright` + `NOTICE`/`LICENSE`-type legal files), changelogs, examples, `doc-base`/`lintian` metadata -- the deb ships them, a minimal rootfs never needs them. See "Exclude by Default" in `shared/CHISEL.md`. Don't add them just because `deb-list.py` lists them.
-16. **Over-including "to be safe".** If a dep or path isn't demonstrably needed, leave it out (add a one-line comment noting why). Reviewers prune speculative deps.
-17. **Shipping config for a tool that isn't sliced.** A config file for a program not in chisel-releases (e.g. a `logrotate` drop-in when `logrotate` isn't sliced) is dead weight -- drop it.
-18. **Patch-level version globs.** Pin only major.minor (`rustc-1.93.*`), never the patch -- it breaks on the next update.
+(The rest of this file already covers dependency order, transitive deps, naming, globs, copyright, maintainer scripts, clutter, and testing -- these are the ones with no step of their own.)
+
+1. **Ignoring architecture differences.** Use `{arch: ...}` for arch-specific paths -- inspect each target arch with `deb-list.py <pkg> <arch>` before assuming one layout.
+2. **Adding speculative slices.** Only ship slices that are needed and testable. Speculative slices are rejected.
+3. **Use-case-specific comments.** Comments like "this slice exists for app X" are rejected. Describe what the slice ships.
+4. **Over-including "to be safe".** If a dep or path isn't demonstrably needed, leave it out (add a one-line comment noting why). Reviewers prune speculative deps.
+5. **Shipping config for a tool that isn't sliced.** A config file for a program not in chisel-releases (e.g. a `logrotate` drop-in when `logrotate` isn't sliced) is dead weight -- drop it.
