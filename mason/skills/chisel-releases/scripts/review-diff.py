@@ -43,7 +43,13 @@ def git(args: list[str]) -> str | None:
 def run_check(script: str, *args: str) -> list[str]:
     r = subprocess.run([sys.executable, str(HERE / script), *args], capture_output=True, text=True)
     lines = (r.stdout + r.stderr).splitlines()
-    return [ln for ln in lines if ln.split() and ln.split()[0] in SEVERITIES]
+    findings = [ln for ln in lines if ln.split() and ln.split()[0] in SEVERITIES]
+    # a checker crash must not read as "no findings" -- exit 1 with zero
+    # parseable findings, or a traceback, means the check never ran.
+    if (r.returncode != 0 and not findings) or "Traceback" in r.stderr:
+        tail = r.stderr.strip().splitlines()[-1] if r.stderr.strip() else f"exit {r.returncode}"
+        findings.append(f"warn   {script} {' '.join(args)}: checker crashed, findings unknown ({tail})")
+    return findings
 
 
 def changed_slices(base: str) -> list[str] | None:

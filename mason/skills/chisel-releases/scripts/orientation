@@ -24,7 +24,7 @@ for t in chisel dpkg-deb spread uv python3 git; do
         dpkg-deb) use="deb-list.py (inspect + --sdf)";;
         spread)   use="integration tests";;
         uv)       use="runs the check-*/scaffold scripts (or python3 + pyyaml)";;
-        python3)  use="deb-list.py, orientation";;
+        python3)  use="deb-list.py (+ check-*/scaffold scripts w/out uv)";;
         git)      use="check-diff.py / review-diff.py";;
     esac
     printf "  %-9s %-4s (%s)\n" "$t" "$avail" "$use"

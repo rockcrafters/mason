@@ -67,11 +67,36 @@ slices:
 """
 
 
+CLEAN_V3 = """\
+package: foo
+essential:
+  foo_copyright:
+slices:
+  bins:
+    essential:
+      libc6_libs:
+    contents:
+      /usr/bin/foo:
+  copyright:
+    contents:
+      /usr/share/doc/foo/copyright:
+"""
+
+
 def test_check_slice() -> None:
     with tempfile.TemporaryDirectory() as td:
         d = Path(td)
-        out = run("check-slice.py", write(d, "foo.yaml", CLEAN), "--branch", "ubuntu-26.04")
+        # list-form essential is the v1/v2 shape; the map form is v3's.
+        out = run("check-slice.py", write(d, "foo.yaml", CLEAN), "--branch", "ubuntu-24.04")
         assert "ok:" in out and "block" not in out, out
+        out = run("check-slice.py", write(d, "foo.yaml", CLEAN_V3), "--branch", "ubuntu-26.04")
+        assert "ok:" in out and "block" not in out, out
+        # COVER: shape-vs-format gates both ways -- list on v3 and map on v1 are
+        # chisel parse errors the linter must block.
+        out = run("check-slice.py", write(d, "foo.yaml", CLEAN), "--branch", "ubuntu-26.04")
+        assert "essential must be a map on v3" in out, out
+        out = run("check-slice.py", write(d, "foo.yaml", CLEAN_V3), "--format", "1")
+        assert "essential-as-map is v3+ only" in out, out
 
         out = run("check-slice.py", write(d, "foo.yaml", DIRTY), "--format", "1")
         assert "contents paths not sorted" in out, out
@@ -85,17 +110,17 @@ def test_check_slice() -> None:
 
         # hint validation (v3): a good hint is clean; length/style are checked.
         def hint_sdf(h):
-            return f'package: foo\nessential:\n  - foo_copyright\nslices:\n  bins:\n    hint: {h}\n    contents:\n      /usr/bin/foo:\n  copyright:\n    contents:\n      /usr/share/doc/foo/copyright:\n'
+            return f'package: foo\nessential:\n  foo_copyright:\nslices:\n  bins:\n    hint: {h}\n    contents:\n      /usr/bin/foo:\n  copyright:\n    contents:\n      /usr/share/doc/foo/copyright:\n'
         out = run("check-slice.py", write(d, "foo.yaml", hint_sdf("System log viewer")), "--format", "3")
         assert "hint" not in out, out  # valid hint, no findings
         out = run("check-slice.py", write(d, "foo.yaml", hint_sdf("The tool that manages absolutely everything here.")), "--format", "3")
         assert "caps it at 40" in out, out            # length is a parse-error block
         assert "start with an article" in out, out    # style warn
 
-        # v3-essential is a v1/v2 backport, obsolete on v3.
+        # v3-essential is a v1/v2 backport; a chisel parse error on v3.
         v3e = "package: foo\nslices:\n  bins:\n    v3-essential:\n      libc6_libs: {arch: [amd64]}\n    contents:\n      /usr/bin/foo:\n  copyright:\n    contents:\n      /usr/share/doc/foo/copyright:\n"
         out = run("check-slice.py", write(d, "foo.yaml", v3e), "--format", "3")
-        assert "v3-essential is obsolete on v3" in out, out
+        assert "v3-essential is rejected on v3" in out, out
         # ...but fine on v1 (no finding).
         out = run("check-slice.py", write(d, "foo.yaml", v3e), "--format", "1")
         assert "v3-essential" not in out, out
@@ -193,9 +218,16 @@ def test_draft_sdf() -> None:
     assert "/usr/share/man" not in sdf, sdf               # clutter dropped
     assert "headers:" in sdf and "/usr/include/foo.h:" in sdf, sdf
     assert "var:" in sdf and "/var/lib/foo/state:" in sdf, sdf
-    # the draft is conformant by construction: check-slice passes on it.
+    # the draft is conformant by construction: check-slice passes on it, on the
+    # format it was drafted for (essential shape is format-gated).
     with tempfile.TemporaryDirectory() as td:
         p = write(Path(td), "foo.yaml", sdf)
+        out = run("check-slice.py", p, "--format", "1")
+        assert "ok:" in out, out
+    sdf3 = m.build_sdf("foo", "libc6", entries, fmt=3)
+    assert "  foo_copyright:" in sdf3 and "- foo_copyright" not in sdf3, sdf3
+    with tempfile.TemporaryDirectory() as td:
+        p = write(Path(td), "foo.yaml", sdf3)
         out = run("check-slice.py", p, "--format", "3")
         assert "ok:" in out, out
 

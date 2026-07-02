@@ -5,13 +5,14 @@
 # ///
 """check-diff: catch append-only regressions between two versions of an SDF.
 
-Published slices are append-only: removing an SDF, a slice, or a content path
-breaks downstream consumers, and the removed-slices CI gate fails on it. Those
-are diff-shaped checks -- single-file linting can't see them. This does:
+Published slices are append-only: removing an SDF or a slice fails the
+removed-slices CI gate; dropping a content path from a kept slice has no CI
+gate but is an append-only regression reviewers reject. Those are diff-shaped
+checks -- single-file linting can't see them. This does:
 
-  - an SDF that existed is now gone            -> removed-slices CI fails
-  - a slice key that existed is now gone        -> removed-slices CI fails
-  - a content path dropped from a kept slice    -> append-only regression
+  - an SDF that existed is now gone (or renamed) -> removed-slices CI fails
+  - a slice key that existed is now gone         -> removed-slices CI fails
+  - a content path dropped from a kept slice     -> append-only regression
 
 Each is reported unless the package or path genuinely left the archive (which
 only the archive can confirm -- a human/CI decides that), so these are warnings
@@ -61,6 +62,10 @@ def compare(old_text: str, new_text: str, label: str) -> list[tuple[str, str, st
     old, new = slice_paths(parse(old_text)), slice_paths(parse(new_text))
     if not old:
         return rows  # nothing published before, or old wasn't an SDF
+    if parse(new_text) is None or not new:
+        # don't report every old slice as removed when the real defect is a
+        # broken new file -- that misdirects the fix.
+        return [("warn", label, "new file is not a parseable SDF -- fix that first")]
     for sname in old:
         if sname not in new:
             rows.append(("warn", f"{label}: {sname}",
@@ -94,7 +99,17 @@ def run_base(base: str, pathspecs: list[str]) -> list[tuple[str, str, str]]:
         code, path = parts[0], parts[-1]
         if code.startswith("D"):
             rows.append(("warn", path, "SDF removed -- removed-slices CI fails unless the package left the archive"))
-        elif code.startswith(("M", "R")):
+        elif code.startswith("R") and len(parts) >= 3:
+            # rename: old path is parts[1], new is parts[2]. the old filename is
+            # gone (removed-slices CI fails on it, e.g. a soname bump), and the
+            # rename may also drop slices/paths -- compare old vs new content.
+            old_path, new_path = parts[1], parts[2]
+            rows.append(("warn", old_path, "SDF renamed away -- removed-slices CI fails unless the package left the archive"))
+            old_text = git(["show", f"{base}:{old_path}"])
+            new = Path(new_path)
+            if old_text is not None and new.exists():
+                rows += compare(old_text, new.read_text(encoding="utf-8"), new_path)
+        elif code.startswith("M"):
             old_text = git(["show", f"{base}:{path}"])
             new = Path(path)
             if old_text is None or not new.exists():

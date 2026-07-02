@@ -66,13 +66,22 @@ def scaffold(doc: Any, pkg: str) -> str:
         "",
     ]
     if not execs:
-        lines += [
-            "execute: |",
-            f"  rootfs=\"$(install-slices {pkg}_<slice>)\"",
-            "  # TODO(author): this SDF declares no explicit binaries -- test its actual",
-            "  # functionality (files present and correct, library loads, config used).",
-            "",
-        ]
+        # no binaries != no test: emit one rootfs per real slice with the
+        # consumer pattern spelled out, so the scaffold is runnable as-is.
+        slices = doc.get("slices") if isinstance(doc, dict) else None
+        names = [n for n in slices if n != "copyright"] if isinstance(slices, dict) else []
+        names = names or ["<slice>"]
+        lines.append("execute: |")
+        first = True
+        for sname in names:
+            if not first:
+                lines.append("")
+            first = False
+            lines.append(f'  rootfs="$(install-slices {pkg}_{sname})"')
+            lines.append(f"  # TODO(author): {pkg}_{sname} declares no binaries. install it together")
+            lines.append("  # with a consumer slice (a runtime or tool that uses this data) and")
+            lines.append("  # assert the consumer works -- file-existence checks alone are weak.")
+        lines.append("")
         return "\n".join(lines)
 
     lines.append("execute: |")

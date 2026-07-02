@@ -68,9 +68,11 @@ def test_text(sdf: Path, task_arg: str | None) -> tuple[str, Path | None]:
         task = Path("tests/spread/integration") / pkg / "task.yaml"
     if not task.exists():
         return "", None
-    parts = [task.read_text(encoding="utf-8")]
+    # errors="replace": a non-UTF8 helper must not crash the check (a crash here
+    # reads as "no findings" to review-diff and silently skips coverage).
+    parts = [task.read_text(encoding="utf-8", errors="replace")]
     for sh in sorted(task.parent.glob("*.sh")):
-        parts.append(sh.read_text(encoding="utf-8"))
+        parts.append(sh.read_text(encoding="utf-8", errors="replace"))
     return "\n".join(parts), task
 
 
@@ -91,7 +93,10 @@ def check(sdf: Path, task_arg: str | None) -> list[tuple[str, str, str]]:
         rows.append(("warn", str(sdf), "no spread test found -- add one that exercises the binaries"))
         return rows
 
-    exercised = {n for n in bins if re.search(rf"\b{re.escape(n)}\b", text)}
+    # lookarounds, not \b: \b needs a word char adjacent, so names ending in
+    # non-word chars (c++, g++, [) never match. exclude name-continuation
+    # chars but allow a leading / so path-prefixed invocations still count.
+    exercised = {n for n in bins if re.search(rf"(?<![\w.+-]){re.escape(n)}(?![\w.+-])", text)}
     untested = sorted(set(bins) - exercised)
     if not exercised:
         # the real red flag: a test exists but touches none of the binaries.

@@ -47,11 +47,17 @@ MAINTAINER_SCRIPTS = [
 
 
 def perms_to_octal(perms):
-    """Convert symbolic permissions string (e.g. -rwxr-xr-x) to octal (e.g. 0755)."""
+    """Convert symbolic permissions string (e.g. -rwsr-xr-x) to octal (e.g. 4755).
+
+    Keeps setuid/setgid/sticky (s/S/t/T in the exec positions) -- exactly the
+    mode information that matters for security-sensitive binaries like sudo.
+    """
     def triplet(t):
-        return (4 if t[0] == "r" else 0) + (2 if t[1] == "w" else 0) + (1 if t[2] not in "-T" else 0)
+        return (4 if t[0] == "r" else 0) + (2 if t[1] == "w" else 0) \
+            + (1 if t[2] in "xst" else 0)
     p = perms[1:10]  # skip type char, take 9 permission chars
-    return f"0{triplet(p[0:3])}{triplet(p[3:6])}{triplet(p[6:9])}"
+    special = (4 if p[2] in "sS" else 0) + (2 if p[5] in "sS" else 0) + (1 if p[8] in "tT" else 0)
+    return f"{special}{triplet(p[0:3])}{triplet(p[3:6])}{triplet(p[6:9])}"
 
 
 def run(cmd, cwd=None, check=True, capture=False):
@@ -170,12 +176,14 @@ def deb_contents(deb_path):
         if entry_type == "d":
             continue  # skip directories
 
+        # NOTE: removeprefix, not lstrip("./") -- lstrip strips any run of '.'
+        # and '/' chars, corrupting targets like ../lib/foo or /etc/foo.
         if entry_type == "l" and len(parts) >= 3 and parts[-2] == "->":
-            path = parts[-3].lstrip("./")
-            symlink_target = parts[-1].lstrip("./")
+            path = parts[-3].removeprefix("./")
+            symlink_target = parts[-1]  # verbatim: absolute, ../-relative, bare all meaningful
             tag = "l"
         else:
-            path = parts[-1].lstrip("./")
+            path = parts[-1].removeprefix("./")
             symlink_target = None
             tag = "x" if "x" in perms[1:] else "f"
 
@@ -211,7 +219,9 @@ BIN_DIRS = ("/usr/bin/", "/usr/sbin/", "/bin/", "/sbin/", "/usr/libexec/")
 _CLUTTER = ("/usr/share/man/", "/usr/man/", "/usr/share/bash-completion/",
             "/usr/share/fish/", "/usr/share/zsh/", "/etc/bash_completion.d/",
             "/usr/share/doc-base/", "/usr/share/lintian/")
-_LEGAL = {"copyright", "notice", "license", "licence", "copying", "authors"}
+# keep in sync with check-slice.py's LEGAL_DOC
+_LEGAL = {"copyright", "notice", "license", "licence", "copying", "authors",
+          "thirdpartynotices", "third-party-notices"}
 # a multiarch lib dir, e.g. /usr/lib/x86_64-linux-gnu/ -> globbed to *-linux-*.
 _TRIPLE = re.compile(r"^(/usr)?/lib(32|64|x32)?/[a-z0-9_]+-linux-[a-z0-9]+/")
 
@@ -253,9 +263,22 @@ def _glob_triple(path):
     return _TRIPLE.sub("/usr/lib/*-linux-*/", path)
 
 
-def build_sdf(pkg, depends, entries):
+def read_format():
+    """format: from ./chisel.yaml (int), or None. gates essential list-vs-map."""
+    try:
+        text = Path("chisel.yaml").read_text()
+    except OSError:
+        return None
+    m = re.search(r"^format:\s*\"?v?(\d+)", text, re.M)
+    return int(m.group(1)) if m else None
+
+
+def build_sdf(pkg, depends, entries, fmt=None):
     """Group deb contents into a draft SDF. Deterministic starting point; the
-    author still wires cross-package essentials and refines the grouping."""
+    author still wires cross-package essentials and refines the grouping.
+
+    fmt: chisel.yaml format version. on v3+ essential: must be a map (list is a
+    chisel parse error), so the draft emits the map form there."""
     buckets = {"bins": [], "libs": [], "config": [], "headers": [], "var": [], "copyright": [], "unplaced": []}
     for path, tag, _perms, _owner, _sym in entries:
         b = classify(path, tag)
@@ -276,7 +299,7 @@ def build_sdf(pkg, depends, entries):
         "#   then run check-slice.py on the result.",
         "",
         "essential:",
-        f"  - {pkg}_copyright",
+        (f"  {pkg}_copyright:" if fmt is not None and fmt >= 3 else f"  - {pkg}_copyright"),
         "",
         "slices:",
     ]
@@ -309,7 +332,7 @@ def main():
     args = [a for a in args if a not in ("--scripts", "--sdf")]
 
     if not args:
-        print("usage: deb-list.py <package> [arch] [--scripts]", file=sys.stderr)
+        print("usage: deb-list.py <package> [arch] [--scripts] [--sdf]", file=sys.stderr)
         sys.exit(1)
 
     pkg = args[0]
@@ -332,7 +355,7 @@ def main():
         depends  = deb_field(deb, "Depends")
 
         if emit_sdf:
-            print(build_sdf(pkg, depends, deb_contents(deb)))
+            print(build_sdf(pkg, depends, deb_contents(deb), fmt=read_format()))
             return
 
         print(f"package: {pkg}  version: {version}  arch: {arch}\n")
