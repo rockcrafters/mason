@@ -27,7 +27,7 @@ Follow these steps in order. Do NOT skip steps.
 
 ### Step 1: Validate
 
-1. **Confirm it is an Ubuntu package.** Chisel only supports packages from Ubuntu (and Ubuntu Pro) archives.
+1. **Confirm it is an Ubuntu package.** Chisel only supports packages from Ubuntu (and Ubuntu Pro) archives. Verify against the archive -- `scripts/deb-list.py <pkg>` (or `apt-cache show <pkg>` where apt is available); do not assume existence from the name. If the package is not found, stop and report it -- do not author anything.
 2. **Identify the target Ubuntu release** (e.g. `ubuntu-24.04`). This determines which chisel-releases branch to target.
 3. **Check the branch is not EOL.** Read `chisel.yaml` on the target branch: `maintenance.end-of-life` must be in the future.
 4. **Check `format:` version** in `chisel.yaml`. This gates available features (see `shared/CHISEL.md` schema versions table). Do not use v2+/v3+ features on older formats.
