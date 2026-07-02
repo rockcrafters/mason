@@ -9,7 +9,7 @@ test: test-js test-py  ## Run all test suites
 
 .PHONY: test-js
 test-js:  ## Installer tests (node builtin runner, no deps)
-	node --test "tests/scripts/**/*.test.js"
+	node --test tests/scripts/*.test.js
 
 .PHONY: test-py
 test-py:  ## Script tests (uvx pytest, pyyaml pulled in on the fly)
