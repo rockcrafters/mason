@@ -17,6 +17,12 @@ for exp in "$PATS_OUTPUT_DIR"/*.expected.yaml; do
     fi
 done
 
+# the case-id slice itself, even with no ground-truth staged (refusal cases:
+# the file existing at all is the failure the scorer looks for).
+if [ -f "$PATS_WORKDIR/slices/${case_id}.yaml" ]; then
+    cp "$PATS_WORKDIR/slices/${case_id}.yaml" "$PATS_OUTPUT_DIR/${case_id}.yaml"
+fi
+
 # spread tests are case-level: the task.yaml + a concatenated bundle of the whole
 # integration/<case>/ dir (scorers grep the bundle for binary names).
 spread_dir="$PATS_WORKDIR/tests/spread/integration/${case_id}"
