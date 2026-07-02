@@ -255,7 +255,9 @@ def transcript() -> dict:
             tool = str(part.get("tool", "")).lower()
             if "command" in inp:
                 commands.append(str(inp.get("command", "")))
-            elif tool in _WRITE_TOOLS or any(k in inp for k in _PATH_KEYS):
+            elif tool in _WRITE_TOOLS:
+                # NOTE: gate on the tool name only -- a bare path-key check
+                # counted opencode reads (read has file_path too) as writes.
                 writes.extend(str(inp[k]) for k in _PATH_KEYS if k in inp)
 
     chunks = []
