@@ -37,13 +37,12 @@ _reinit_git() {
         commit --quiet -m "chisel-releases base (target slice removed)"
 }
 
-# _install: install the skill only for the agent under test (-> its skills dir).
-# pats exposes PATS_MODEL but not the agent kind; openrouter model ids are
-# author/model (slash), claude-cli ids are not -- enough to pick the installer.
+# _install: install the skill only for the agent under test (-> its skills dir),
+# picked off the harness kind pats exposes.
 _install() {
     local a=claude
-    case "$PATS_MODEL" in
-        */*) a=opencode ;;
+    case "$PATS_AGENT_KIND" in
+        opencode-*) a=opencode ;;
     esac
     node "$_repo_root/scripts/cli.js" install --agents "$a" --target "$PATS_WORKDIR" --force --quiet
 }

@@ -11,11 +11,14 @@ to its result:
   0.5  ran it but no invocation succeeded (every cut errored)
   1.0  ran it and at least one cut exited cleanly
 
-two transcript formats, tried in order:
-  - claude (stdout.log, ndjson stream-json): tool_use/tool_result correlation.
-  - opencode (stderr.log, plain ANSI text): `$ <command>` blocks, scanned for
-    failure markers in their output. used whenever stdout.log has no parseable
-    stream-json (i.e. non-claude harnesses).
+three transcript formats, tried in order:
+  - claude (stdout.log, ndjson stream-json): tool_use/tool_result correlation
+    (claude lines carry "message"/"session_id" keys).
+  - opencode (stdout.log, `--format json` events): each tool_use event carries
+    both the command and its result (part.state), no correlation needed
+    (opencode lines carry a "part" object + camel-case "sessionID").
+  - plain text (stderr.log/stdout.log, ANSI): `$ <command>` blocks scanned for
+    failure markers. fallback for old opencode runs predating --format json.
 """
 from _lib import *  # noqa: F403
 import json
@@ -30,26 +33,30 @@ def _is_cut_cmd(cmd: str) -> bool:
     return "chisel cut" in cmd or "try-cut" in cmd
 
 
-def _score_claude() -> float | None:
-    """stream-json tool_use/tool_result correlation. None if stdout.log has no
-    parseable json (-> not a claude transcript)."""
-    log = OUT / "stdout.log"
-    if not log.exists():
-        return None
-
-    cut_ids: dict[str, str] = {}
-    results: dict[str, tuple[bool, str]] = {}
-    saw_json = False
-
-    for line in log.read_text(encoding="utf-8", errors="replace").splitlines():
+def _jsonl(path):
+    """yield parsed json objects from a jsonl file, skipping non-json lines."""
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         line = line.strip()
         if not line:
             continue
         try:
-            ev = json.loads(line)
+            yield json.loads(line)
         except json.JSONDecodeError:
             continue
-        saw_json = True
+
+
+def _score_claude() -> float | None:
+    """stream-json tool_use/tool_result correlation. None if stdout.log has no
+    claude-shaped events."""
+    cut_ids: dict[str, str] = {}
+    results: dict[str, tuple[bool, str]] = {}
+    saw_claude = False
+
+    for ev in _jsonl(OUT / "stdout.log"):
+        if "message" in ev or "session_id" in ev:
+            saw_claude = True
         for c in ((ev.get("message") or {}).get("content") or []):
             if not isinstance(c, dict):
                 continue
@@ -65,8 +72,8 @@ def _score_claude() -> float | None:
                     text = str(cont or "")
                 results[c.get("tool_use_id")] = (bool(c.get("is_error")), text)
 
-    if not saw_json:
-        return None  # not a stream-json transcript -- let the text scorer try
+    if not saw_claude:
+        return None
     if not cut_ids:
         return 0.0
     for tid in cut_ids:
@@ -74,6 +81,37 @@ def _score_claude() -> float | None:
         if r is None:
             continue
         is_err, text = r
+        if not is_err and not any(m in text.lower() for m in _FAIL):
+            return 1.0
+    return 0.5
+
+
+def _score_opencode() -> float | None:
+    """opencode --format json: a tool_use event is self-contained -- the part's
+    state carries input.command, output/error, and status. None if stdout.log
+    has no opencode-shaped events."""
+    saw_oc = False
+    cuts: list[tuple[bool, str]] = []  # (is_err, output)
+
+    for ev in _jsonl(OUT / "stdout.log"):
+        part = ev.get("part")
+        if not isinstance(part, dict):
+            continue
+        saw_oc = True
+        if ev.get("type") != "tool_use":
+            continue
+        state = part.get("state") or {}
+        cmd = str((state.get("input") or {}).get("command", ""))
+        if not _is_cut_cmd(cmd):
+            continue
+        out = str(state.get("output") or state.get("error") or "")
+        cuts.append((state.get("status") == "error", out))
+
+    if not saw_oc:
+        return None
+    if not cuts:
+        return 0.0
+    for is_err, text in cuts:
         if not is_err and not any(m in text.lower() for m in _FAIL):
             return 1.0
     return 0.5
@@ -120,9 +158,9 @@ def _score_text() -> float:
 
 
 def score() -> float:
-    claude_score = _score_claude()
-    if claude_score is not None:
-        return claude_score
+    for s in (_score_claude(), _score_opencode()):
+        if s is not None:
+            return s
     return _score_text()
 
 

@@ -6,8 +6,8 @@
 # clis installed globally (npm -g) so they're on PATH for any uid -- pats runs
 # the container with `--user <host uid>`, which has no home of its own.
 #
-# build locally (pats image not published yet):
-#   docker build -t mason-test/sandbox:26.04 tests/
+# built by pats itself (`build: .` in pats.yaml) at the start of every run;
+# the docker layer cache makes the no-change case a no-op.
 FROM docker.io/library/ubuntu:26.04
 
 RUN apt-get update && \

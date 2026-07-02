@@ -7,7 +7,8 @@
 
 reads the run transcript and checks for orientation's own success marker
 ("working dir (chisel-releases checkout):"), the same way scorer_chisel-cut.py
-reads claude's stream-json (stdout.log) or opencode's plain ANSI text (stderr.log):
+does. three transcript formats, tried in order (see that scorer's docstring):
+claude stream-json, opencode --format json, plain text (old opencode runs).
   0.0  orientation never ran (no invocation attempt found)
   0.5  invocation attempted but failed (e.g. wrong path -- no success marker)
   1.0  ran successfully, before the first write to a slice file
@@ -21,24 +22,29 @@ _SUCCESS_MARKER = "working dir (chisel-releases checkout):"
 _ATTEMPT_MARKERS = ("orientation",)
 
 
-def _claude_events():
-    """yield (kind, text) for each stream-json event in stdout.log, in order.
-    kind is 'tool_use' (text = the bash command) or 'text' (assistant/tool output).
-    None if stdout.log has no parseable json (-> not a claude transcript)."""
-    log = OUT / "stdout.log"
-    if not log.exists():
-        return None
-    events = []
-    saw_json = False
-    for line in log.read_text(encoding="utf-8", errors="replace").splitlines():
+def _jsonl(path):
+    """yield parsed json objects from a jsonl file, skipping non-json lines."""
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         line = line.strip()
         if not line:
             continue
         try:
-            ev = json.loads(line)
+            yield json.loads(line)
         except json.JSONDecodeError:
             continue
-        saw_json = True
+
+
+def _claude_events():
+    """yield the bash commands + tool outputs from claude stream-json in
+    stdout.log. None if no claude-shaped events (claude lines carry
+    "message"/"session_id"; opencode's json uses "sessionID" + "part")."""
+    events = []
+    saw_claude = False
+    for ev in _jsonl(OUT / "stdout.log"):
+        if "message" in ev or "session_id" in ev:
+            saw_claude = True
         for c in ((ev.get("message") or {}).get("content") or []):
             if not isinstance(c, dict):
                 continue
@@ -48,13 +54,30 @@ def _claude_events():
                 cont = c.get("content")
                 text = " ".join(b.get("text", "") for b in cont if isinstance(b, dict)) if isinstance(cont, list) else str(cont or "")
                 events.append(text)
-    return events if saw_json else None
+    return events if saw_claude else None
 
 
-def _score_claude() -> float | None:
-    events = _claude_events()
-    if events is None:
-        return None
+def _opencode_events():
+    """yield the bash commands + tool outputs + assistant/reasoning text from
+    opencode --format json events in stdout.log. None if no opencode-shaped
+    events (each carries a "part" object)."""
+    events = []
+    saw_oc = False
+    for ev in _jsonl(OUT / "stdout.log"):
+        part = ev.get("part")
+        if not isinstance(part, dict):
+            continue
+        saw_oc = True
+        if ev.get("type") == "tool_use":
+            state = part.get("state") or {}
+            events.append(str((state.get("input") or {}).get("command", "")))
+            events.append(str(state.get("output") or state.get("error") or ""))
+        elif ev.get("type") in ("text", "reasoning"):
+            events.append(str(part.get("text", "")))
+    return events if saw_oc else None
+
+
+def _score_events(events) -> float:
     joined = "\n".join(events)
     if not any(m in joined for m in _ATTEMPT_MARKERS):
         return 0.0
@@ -74,9 +97,9 @@ def _score_text() -> float:
 
 
 def score() -> float:
-    claude_score = _score_claude()
-    if claude_score is not None:
-        return claude_score
+    for events in (_claude_events(), _opencode_events()):
+        if events is not None:
+            return _score_events(events)
     return _score_text()
 
 
