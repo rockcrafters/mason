@@ -1,14 +1,31 @@
 # mason
 
+<img src="assets/logo2.png" alt="Mason logo" align="right" width="300">
+
+![WIP](https://img.shields.io/badge/%E2%9A%A0%EF%B8%8F%20work%20in%20progress%20%20%E2%9A%A0%EF%B8%8F-ffffff)
+
 [![Ubuntu](https://img.shields.io/badge/Ubuntu-E95420?logo=ubuntu&logoColor=white)](#)
 [![rocks](https://img.shields.io/badge/%F0%9F%AA%A8-rocks-E95420)](https://ubuntu.com/server/docs/explanation/virtualisation/about-rock-images/)
 [![test](https://github.com/rockcrafters/mason/actions/workflows/test.yml/badge.svg)](https://github.com/rockcrafters/mason/actions/workflows/test.yml)
 
-<p align="center">
-  <img src="assets/logo2.png" alt="Mason logo">
-</p>
+Tribal knowledge about [`rocks`](https://documentation.ubuntu.com/rockcraft/stable/explanation/rocks/), [`rockcraft`](https://documentation.ubuntu.com/rockcraft/latest/), [`chisel`](https://github.com/canonical/chisel), [`chisel-releases`](https://github.com/canonical/chisel-releases), and slice definition files (SDFs).
 
-Agent kit for working on [`canonical/chisel-releases`](https://github.com/canonical/chisel-releases). Packages the tribal knowledge needed to author and review chisel slice definition files (SDFs) so an AI coding agent can pick it up on demand.
+Install with:
+
+```
+npx github:rockcrafters/mason install ...
+```
+
+_(see below for detailed instructions)_
+
+and then, for example, write a new SDF file:
+
+```
+git clone https://github.com/canonical/chisel-releases.git && cd chisel-releases
+git checkout ubuntu-26.04 && git checkout -b feat/my-new-slice
+<in your coding agent>
+/mason "please help me write an sdf for foobar"
+```
 
 ## install
 
@@ -39,7 +56,7 @@ Claude code users can alternatively add it as a plugin via the marketplace (`.cl
 
 `mason` is an umbrella kit for chisel / rocks work. each capability area is one self-contained skill
 under `mason/skills/`; the installer copies each per agent (no committed per-agent adapters). today
-there are two: `chisel-releases` (the substance) and `mason` (a `/mason` usage stub that prints help).
+there are two: `chisel-releases` (the substance) and `mason` (the `/mason` entry point -- routes a request to the right skill, or prints help).
 
 ```
 mason/
@@ -60,7 +77,7 @@ mason/
         check-diff.py              # append-only regressions (removed SDF / slice / path) vs a base ref
         review-diff.py             # run the three checks over a PR diff -> report + verdict + exit code
       schemas/commands.manifest.yaml  # command index (command -> file)
-    mason/                         # umbrella /mason skill -- prints usage/help, no actions
+    mason/                         # umbrella /mason skill -- routes to a skill, or prints usage
       SKILL.md
   .claude-plugin/                  # claude code plugin manifest
 scripts/cli.js                     # the npx installer (installs every skill under mason/skills/)
