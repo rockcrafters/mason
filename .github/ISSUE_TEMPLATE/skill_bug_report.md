@@ -1,7 +1,7 @@
 ---
 name: skill bug
 about: you've used this skill and it didn't work
-title: "bug(skill): "
+title: "bug: "
 labels: skill-bug
 ---
 
