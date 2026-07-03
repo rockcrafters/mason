@@ -1,6 +1,7 @@
 ---
 name: bug
 about: catch-all bug *except* for unexpected skill behaviour
+title: "bug: "
 labels: bug
 ---
 
