@@ -8,7 +8,7 @@ labels: skill-bug
 ## what happened
 
 <!-- what were your prompts? -->
-how did the agent get confused?
+<!-- how did the agent get confused? -->
 <!-- what would you have liked to have happened? -->
 
 **prompt(s):**
