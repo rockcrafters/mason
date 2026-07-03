@@ -13,7 +13,9 @@ working on [`canonical/chisel-releases`](https://github.com/canonical/chisel-rel
 
 @./mason/skills/chisel/SKILL.md
 
-self-contained under `./mason/skills/chisel/`: `commands/`, shared reference `shared/CHISEL.md`, helpers under `scripts/`, command index `schemas/commands.manifest.yaml`. paths inside command files are relative to the skill's own directory (or, for repo paths like `slices/`, to the chisel-releases checkout being worked on).
+lives under `./mason/skills/chisel/`: `commands/`, helpers under `scripts/`, command index `schemas/commands.manifest.yaml`, and -- once installed -- shared reference `shared/CHISEL.md`. paths inside command files are relative to the skill's own directory (or, for repo paths like `slices/`, to the chisel-releases checkout being worked on).
+
+`shared/CHISEL.md` is not committed -- the source of truth is `./mason/_shared/CHISEL.md`, and `cli.js` materialises it as `<skill>/shared/` when installing each skill. in this repo, read/edit `mason/_shared/CHISEL.md` directly; a `mason/skills/*/shared/` dir here is gitignored install fallout, not source.
 
 the deterministic scripts are the backbone, so the commands don't rely on the agent remembering conventions or hand-rolling boilerplate:
 

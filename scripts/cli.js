@@ -2,8 +2,10 @@
 // mason cross-agent skill installer. zero-dep.
 //   npx github:rockcrafters/mason install [--agents claude,pi,copilot,opencode]
 //                                         [--target <dir>] [--dry-run] [--force]
-// copies each self-contained skill tree (mason/skills/<skill>/) into each agent's
-// skill-discovery dir. opencode also gets real command .md files for its loader.
+// copies each skill tree (mason/skills/<skill>/) into each agent's skill-discovery
+// dir, materialising the shared reference (mason/_shared/) as <skill>/shared/ so
+// every installed skill is self-contained. opencode also gets real command .md
+// files for its loader.
 // NOTE: no install-state tracking -- re-install skips files that differ from
 // source (warns to use --force) and never silently clobbers local edits.
 // --force is a clean per-skill reinstall: it drops <base>/<skill> then rewrites,
@@ -16,6 +18,7 @@ const { execSync } = require('node:child_process');
 
 const PKG_ROOT = path.resolve(__dirname, '..');
 const SKILLS_ROOT = path.join(PKG_ROOT, 'mason', 'skills'); // one dir per skill (chisel, ...)
+const SHARED_ROOT = path.join(PKG_ROOT, 'mason', '_shared'); // source of truth for every skill's shared/
 const SUPPORTED = ['claude', 'pi', 'copilot', 'opencode', 'codex'];
 
 // base dir each agent scans for skills, relative to target. each skill installs to <base>/<skill>.
@@ -156,6 +159,9 @@ function install(opts) {
       const dstRoot = path.join(opts.target, SKILL_BASE[agent], skill);
       if (opts.force) wipeSkill(dstRoot, opts, logs);
       copyTree(src, dstRoot, opts, logs, warns);
+      // NOTE: every skill gets the whole shared/ tree; per-skill opt-out only if
+      // a skill ever must not carry it.
+      if (fs.existsSync(SHARED_ROOT)) copyTree(SHARED_ROOT, path.join(dstRoot, 'shared'), opts, logs, warns);
       if (agent === 'opencode') {
         // single dispatcher so `/<skill> <subcmd>` works like in claude
         const dispatcher = Buffer.from(

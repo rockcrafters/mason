@@ -28,7 +28,7 @@ read-only.
 ## Layout
 
 - `commands/` -- command workflows: markdown to read and follow, not executable scripts
-- `shared/CHISEL.md` -- reference (format, branch model, schema versions, naming, sources of truth)
+- `shared/CHISEL.md` -- reference (format, branch model, schema versions, naming, sources of truth). NOTE: in the mason source repo this file lives at `mason/_shared/CHISEL.md`; the installer materialises it here.
 - `scripts/` -- runnable helpers: `orientation`, `deb-list.py` (inspect a .deb; `--sdf` emits a draft SDF), `try-cut`, `scaffold-test.py` (emit a spread test skeleton), `check-slice.py` (deterministic SDF linter), `check-test.py` (binary test-coverage check), `check-diff.py` (append-only regression check), `review-diff.py` (runs all three over a PR diff)
 - `schemas/commands.manifest.yaml` -- command index (name -> file)
 

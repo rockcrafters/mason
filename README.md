@@ -44,7 +44,7 @@ npx github:rockcrafters/mason install --agents claude
 --help, -h        show this help
 ```
 
-The installer copies each self-contained skill tree into the agent's skill-discovery directory
+The installer copies each skill tree, plus the shared reference `mason/_shared/` as `<skill>/shared/`, into the agent's skill-discovery directory
 (`.claude/skills/<skill>`, `.pi/skills/<skill>`, `.github/skills/<skill>`, `.opencode/skills/<skill>`, `.codex/skills/<skill>`);
 opencode additionally gets a generated `.opencode/command/<skill>.md`. Re-running skips up-to-date
 files and leaves locally-modified ones alone; `--force` drops each known skill dir and writes it
@@ -66,7 +66,7 @@ mason/
       commands/
         write-slice.md             # author + scaffold tests + self-check + commit
         review-slice.md            # review: deterministic first pass (scripts) + judgement
-      shared/CHISEL.md             # shared reference (format, branch model, schema versions, sources of truth)
+      shared/CHISEL.md             # not committed -- materialised from mason/_shared/ on install
       scripts/
         orientation                # deterministic orientation: cwd, skill dir, target release + format
         deb-list.py                # inspect .deb contents (files, deps, maintainer scripts); --sdf emits a draft SDF
@@ -79,6 +79,8 @@ mason/
       schemas/commands.manifest.yaml  # command index (command -> file)
     mason/                         # umbrella /mason skill -- routes to a skill, or prints usage
       SKILL.md
+  _shared/                         # shared reference, source of truth (format, branch model, schema versions)
+    CHISEL.md
   .claude-plugin/                  # claude code plugin manifest
 scripts/cli.js                     # the npx installer (installs every skill under mason/skills/)
 tests/scripts/                     # pytest (script checks) + node --test (installer) -- see makefile
@@ -86,6 +88,9 @@ package.json                       # bin: mason -> scripts/cli.js
 ```
 
 Adding a capability = a new skill directory under `mason/skills/`; the installer picks it up automatically.
+Skills share reference material via `mason/_shared/` -- the single source of truth. The installer
+materialises it into every skill as `<skill>/shared/`, so installed skills are self-contained; the
+copies are never committed (gitignored).
 
 ## testing
 

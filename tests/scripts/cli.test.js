@@ -38,6 +38,17 @@ test('fresh install lands both skills', () => {
   assert.ok(fs.existsSync(claudeSkill(t, 'chisel')));
 });
 
+test('shared/ is materialised into every skill from mason/_shared', () => {
+  const t = tmpTarget();
+  run(t, ['--agents', 'claude']);
+  const src = path.resolve(__dirname, '..', '..', 'mason', '_shared', 'CHISEL.md');
+  for (const skill of ['chisel', 'mason']) {
+    const dst = path.join(t, '.claude', 'skills', skill, 'shared', 'CHISEL.md');
+    assert.ok(fs.existsSync(dst), `${skill} must get shared/CHISEL.md`);
+    assert.deepEqual(fs.readFileSync(dst), fs.readFileSync(src), 'materialised copy must match source');
+  }
+});
+
 test('re-install of identical files is up-to-date, no rewrite', () => {
   const t = tmpTarget();
   run(t, ['--agents', 'claude']);
