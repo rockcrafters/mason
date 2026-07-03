@@ -144,7 +144,7 @@ test('explicit agents mix with auto', () => {
 test('agents=all installs every agent, short-circuits auto', () => {
   const t = fs.mkdtempSync(path.join(os.tmpdir(), 'mason-test-')); // no markers: auto would find nothing
   const out = run(t, ['claude,auto,codex,all']);
-  assert.match(out, /agents: claude, pi, copilot, opencode, codex\n/);
+  assert.match(out, /agents: claude, pi, copilot-cli, opencode, codex\n/);
   for (const base of ['.claude/skills', '.pi/skills', '.github/skills', '.opencode/skills', '.codex/skills']) {
     assert.ok(fs.existsSync(path.join(t, base, 'mason', 'SKILL.md')), `${base} must be installed`);
   }
@@ -183,4 +183,50 @@ test('opencode gets a command dispatcher per skill', () => {
   run(t, ['opencode']);
   assert.ok(fs.existsSync(path.join(t, '.opencode', 'command', 'mason.md')));
   assert.ok(fs.existsSync(path.join(t, '.opencode', 'command', 'chisel-releases.md')));
+});
+
+const ciEntry = (target) => path.join(target, '.github', 'copilot-instructions.md');
+const ciInstr = (target, name) => path.join(target, '.github', 'instructions', name);
+
+test('copilot-instructions installs entry file and shared knowledge, no agents needed', () => {
+  const t = tmpTarget();
+  const out = run(t, ['copilot-instructions']);
+  assert.match(out, /extras: copilot-instructions\n/);
+  assert.ok(fs.existsSync(ciEntry(t)));
+  const instr = fs.readFileSync(ciInstr(t, 'mason-CHISEL.instructions.md'), 'utf-8');
+  assert.ok(instr.startsWith('---\napplyTo: "**"\n---\n\n'), 'must prepend applyTo frontmatter');
+  const src = fs.readFileSync(path.resolve(__dirname, '..', '..', 'mason', '_shared', 'CHISEL.md'), 'utf-8');
+  assert.ok(instr.endsWith(src), 'body must match the _shared source');
+  assert.ok(!fs.existsSync(path.join(t, '.github', 'skills')), 'must not install skills');
+});
+
+test('copilot-instructions is not implied by all or auto', () => {
+  const t = tmpTarget(); // .claude marker -> auto finds claude
+  run(t, ['all,auto']);
+  assert.ok(!fs.existsSync(ciEntry(t)), 'all/auto must not write copilot-instructions.md');
+});
+
+test('force drops stale mason-*.instructions.md, keeps foreign instructions', () => {
+  const t = tmpTarget();
+  run(t, ['copilot-instructions']);
+  const stale = ciInstr(t, 'mason-GONE.instructions.md');
+  fs.writeFileSync(stale, 'stale');
+  const foreign = ciInstr(t, 'other.instructions.md');
+  fs.writeFileSync(foreign, 'keep');
+
+  run(t, ['copilot-instructions', '--force']);
+
+  assert.ok(!fs.existsSync(stale), 'stale mason-prefixed file must be dropped');
+  assert.ok(fs.existsSync(ciInstr(t, 'mason-CHISEL.instructions.md')), 'ours must be rewritten');
+  assert.equal(fs.readFileSync(foreign, 'utf-8'), 'keep', 'foreign instructions must survive');
+});
+
+test('copilot-instructions re-install is idempotent, conflicts respected', () => {
+  const t = tmpTarget();
+  run(t, ['copilot-instructions']);
+  const out = run(t, ['copilot-instructions']);
+  assert.match(out, /up-to-date:/);
+  fs.writeFileSync(ciEntry(t), 'local edit');
+  run(t, ['copilot-instructions']); // conflict warns, no clobber
+  assert.equal(fs.readFileSync(ciEntry(t), 'utf-8'), 'local edit', 'conflict must not clobber');
 });

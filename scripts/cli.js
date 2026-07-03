@@ -5,7 +5,10 @@
 // copies each skill tree (mason/skills/<skill>/) into each agent's skill-discovery
 // dir, materialising the shared reference (mason/_shared/) as <skill>/shared/ so
 // every installed skill is self-contained. opencode also gets real command .md
-// files for its loader.
+// files for its loader. the extra 'copilot-instructions' target (never implied
+// by all/auto) writes .github/copilot-instructions.md and materialises
+// mason/_shared/ as .github/instructions/mason-*.instructions.md for copilot
+// code review.
 // NOTE: no install-state tracking -- re-install skips files that differ from
 // source (warns to use --force) and never silently clobbers local edits.
 // --force is a clean per-skill reinstall: it drops <base>/<skill> then rewrites,
@@ -19,13 +22,16 @@ const { execSync } = require('node:child_process');
 const PKG_ROOT = path.resolve(__dirname, '..');
 const SKILLS_ROOT = path.join(PKG_ROOT, 'mason', 'skills'); // one dir per skill (chisel-releases, ...)
 const SHARED_ROOT = path.join(PKG_ROOT, 'mason', '_shared'); // source of truth for every skill's shared/
-const SUPPORTED = ['claude', 'pi', 'copilot', 'opencode', 'codex'];
+const COPILOT_INSTRUCTIONS_ROOT = path.join(PKG_ROOT, 'mason', 'copilot-instructions');
+const SUPPORTED = ['claude', 'pi', 'copilot-cli', 'opencode', 'codex'];
+// non-agent install targets, explicit opt-in only: never part of 'all' or 'auto'.
+const EXTRAS = ['copilot-instructions'];
 
 // base dir each agent scans for skills, relative to target. each skill installs to <base>/<skill>.
 const SKILL_BASE = {
   claude: '.claude/skills',
   pi: '.pi/skills',
-  copilot: '.github/skills',
+  'copilot-cli': '.github/skills',
   opencode: '.opencode/skills',
   codex: '.codex/skills',
 };
@@ -34,7 +40,7 @@ const SKILL_BASE = {
 const MARKERS = {
   claude: ['.claude', 'CLAUDE.md'],
   pi: ['.pi'],
-  copilot: ['.github/copilot-instructions.md', '.github/prompts'],
+  'copilot-cli': ['.github/copilot-instructions.md', '.github/prompts'],
   opencode: ['opencode.json', '.opencode'],
   codex: ['.codex'],
 };
@@ -48,6 +54,9 @@ arguments:
   <agents>          required. comma-separated: ${SUPPORTED.join(', ')};
                     also: auto (detect agents in target), all (every agent).
                     duplicates are fine; all wins over everything else.
+                    extra target: copilot-instructions (writes
+                    .github/copilot-instructions.md + .github/instructions/
+                    for copilot code review; never implied by all/auto).
 
 options:
   --target <dir>    install into <dir> (default: git root, else cwd)
@@ -145,23 +154,61 @@ function listSkills() {
     .map((e) => e.name);
 }
 
+// copilot code review reads .github/copilot-instructions.md plus
+// .github/instructions/*.instructions.md (scoped by applyTo frontmatter) -- it
+// never sees .github/skills/, hence this separate target. the entry file is
+// copied verbatim; every mason/_shared/*.md is materialised as an instructions
+// file with frontmatter prepended, so new shared references are picked up
+// automatically. dest names get a mason- prefix: it namespaces our files among
+// foreign .instructions.md and scopes the --force wipe.
+const INSTRUCTIONS_FRONTMATTER = '---\napplyTo: "**"\n---\n\n';
+
+function wipeInstructions(dir, opts, logs) {
+  if (!fs.existsSync(dir)) return;
+  for (const f of fs.readdirSync(dir)) {
+    if (!f.startsWith('mason-') || !f.endsWith('.instructions.md')) continue;
+    const rel = path.relative(opts.target, path.join(dir, f));
+    if (opts.dryRun) { logs.push(`would drop: ${rel}`); continue; }
+    fs.rmSync(path.join(dir, f));
+    logs.push(`dropped: ${rel}`);
+  }
+}
+
+function installCopilotInstructions(opts, logs, warns) {
+  logs.push('-- copilot-instructions --');
+  const entry = path.join(COPILOT_INSTRUCTIONS_ROOT, 'copilot-instructions.md');
+  placeFile(fs.readFileSync(entry), path.join(opts.target, '.github', 'copilot-instructions.md'), opts, logs, warns);
+  const instrDir = path.join(opts.target, '.github', 'instructions');
+  if (opts.force) wipeInstructions(instrDir, opts, logs);
+  if (!fs.existsSync(SHARED_ROOT)) return;
+  for (const src of listFiles(SHARED_ROOT)) {
+    if (!src.endsWith('.md')) continue;
+    const rel = path.relative(SHARED_ROOT, src);
+    const name = `mason-${rel.replace(/\.md$/, '').split(path.sep).join('-')}.instructions.md`;
+    const content = Buffer.concat([Buffer.from(INSTRUCTIONS_FRONTMATTER), fs.readFileSync(src)]);
+    placeFile(content, path.join(instrDir, name), opts, logs, warns);
+  }
+}
+
 function install(opts) {
   const logs = [];
   const warns = [];
   if (!fs.existsSync(SKILLS_ROOT)) throw new Error(`missing skills payload: ${SKILLS_ROOT}`);
   const skills = listSkills();
   const agents = resolveAgents(opts.agents, opts.target);
+  const extras = EXTRAS.filter((e) => opts.agents.includes(e));
 
   logs.push(`target: ${opts.target}`);
   logs.push(`skills: ${skills.join(', ')}`);
   logs.push(`agents: ${agents.join(', ') || '(none)'}`);
+  if (extras.length) logs.push(`extras: ${extras.join(', ')}`);
 
-  if (!agents.length) {
+  if (!agents.length && !extras.length) {
     if (opts.agents.includes('auto')) {
       logs.push('no agent markers found in target; nothing to install.');
       return { logs, warns };
     }
-    throw new Error(`no valid agents given. supported: ${SUPPORTED.join(', ')}, auto, all`);
+    throw new Error(`no valid agents given. supported: ${SUPPORTED.join(', ')}, auto, all, ${EXTRAS.join(', ')}`);
   }
   logs.push(`mode: ${opts.dryRun ? 'dry-run' : 'write'}${opts.force ? ', force' : ''}`);
 
@@ -189,6 +236,7 @@ Use the ${skill} skill. Sub-command: $ARGUMENTS
       // pi loads the skill natively from .pi/skills/<skill>/ -- no extra prompt command needed.
     }
   }
+  if (extras.includes('copilot-instructions')) installCopilotInstructions(opts, logs, warns);
   return { logs, warns };
 }
 
