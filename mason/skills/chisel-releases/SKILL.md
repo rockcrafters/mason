@@ -1,5 +1,5 @@
 ---
-name: chisel
+name: chisel-releases
 description: >-
   Author or review chisel slice definition files (SDFs) against canonical/chisel-releases.
   Command-per-file architecture, portable across claude code, pi, opencode, copilot, and codex.
@@ -9,7 +9,7 @@ description: >-
 argument-hint: "[write-slice|review-slice] <pkg-or-sdf>"
 ---
 
-# chisel
+# chisel-releases
 
 Cross-agent skill for working on [`canonical/chisel-releases`](https://github.com/canonical/chisel-releases).
 Self-contained: the same skill directory drives claude code, pi, opencode, copilot, and codex.
@@ -43,9 +43,9 @@ Treat its output as ground truth; don't infer any of it. Then read
 
 ## Commands
 
-`write-slice` and `review-slice` are **not** standalone slash commands -- only `/chisel` is registered. select a command from the invocation:
+`write-slice` and `review-slice` are **not** standalone slash commands -- only `/chisel-releases` is registered. select a command from the invocation:
 
-- `/chisel write-slice <pkg>` (the first arg names the command), or
+- `/chisel-releases write-slice <pkg>` (the first arg names the command), or
 - plain language: "write a slice for `<pkg>`", "review `slices/foo.yaml`".
 
 dispatch: take the first token of the args as the command name; if it matches a command below, read that file and follow its steps, treating the rest of the args as its input. on no match, or no args at all, print the numbered list below and wait for the user's reply before loading anything -- never guess.

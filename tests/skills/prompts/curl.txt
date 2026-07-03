@@ -1,4 +1,4 @@
-Use the chisel skill to author a chisel slice definition file (SDF) for the package `curl` on the `ubuntu-26.04` branch.
+Use the chisel-releases skill to author a chisel slice definition file (SDF) for the package `curl` on the `ubuntu-26.04` branch.
 
 You are in a checkout of canonical/chisel-releases (your current directory). Write the slice to `slices/curl.yaml`, following the skill's write-slice workflow and the conventions in the skill's shared reference.
 

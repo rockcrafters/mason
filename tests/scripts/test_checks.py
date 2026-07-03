@@ -1,6 +1,6 @@
 """pytest regression net for the skill's deterministic checkers.
 
-Exercises the scripts under mason/skills/chisel/scripts/ on inline
+Exercises the scripts under mason/skills/chisel-releases/scripts/ on inline
 fixtures via subprocess, so this tests the real CLI, not imported internals. The
 subprocessed scripts need pyyaml, which must be present under the runner's
 interpreter. Run:
@@ -14,7 +14,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-SCRIPTS = Path(__file__).resolve().parents[2] / "mason/skills/chisel/scripts"
+SCRIPTS = Path(__file__).resolve().parents[2] / "mason/skills/chisel-releases/scripts"
 
 
 def run(script: str, *args: str) -> str:

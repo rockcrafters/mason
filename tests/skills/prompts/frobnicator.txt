@@ -1,1 +1,1 @@
-/chisel write-slice frobnicator
+/chisel-releases write-slice frobnicator

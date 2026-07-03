@@ -1,5 +1,5 @@
 version: 1
-skill: chisel
+skill: chisel-releases
 summary: Cross-agent skill for authoring and reviewing chisel slice definition files (SDFs).
 
 # shared reference loaded before any command. paths are relative to this

@@ -35,14 +35,14 @@ test('fresh install lands both skills', () => {
   const t = tmpTarget();
   run(t, ['--agents', 'claude']);
   assert.ok(fs.existsSync(claudeSkill(t, 'mason')));
-  assert.ok(fs.existsSync(claudeSkill(t, 'chisel')));
+  assert.ok(fs.existsSync(claudeSkill(t, 'chisel-releases')));
 });
 
 test('shared/ is materialised into every skill from mason/_shared', () => {
   const t = tmpTarget();
   run(t, ['--agents', 'claude']);
   const src = path.resolve(__dirname, '..', '..', 'mason', '_shared', 'CHISEL.md');
-  for (const skill of ['chisel', 'mason']) {
+  for (const skill of ['chisel-releases', 'mason']) {
     const dst = path.join(t, '.claude', 'skills', skill, 'shared', 'CHISEL.md');
     assert.ok(fs.existsSync(dst), `${skill} must get shared/CHISEL.md`);
     assert.deepEqual(fs.readFileSync(dst), fs.readFileSync(src), 'materialised copy must match source');
@@ -120,5 +120,5 @@ test('opencode gets a command dispatcher per skill', () => {
   const t = tmpTarget();
   run(t, ['--agents', 'opencode']);
   assert.ok(fs.existsSync(path.join(t, '.opencode', 'command', 'mason.md')));
-  assert.ok(fs.existsSync(path.join(t, '.opencode', 'command', 'chisel.md')));
+  assert.ok(fs.existsSync(path.join(t, '.opencode', 'command', 'chisel-releases.md')));
 });

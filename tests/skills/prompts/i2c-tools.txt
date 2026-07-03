@@ -1,4 +1,4 @@
-Use the chisel skill to author chisel slice definition files (SDFs) for these packages on the `ubuntu-26.04` branch: libi2c0, udev, i2c-tools.
+Use the chisel-releases skill to author chisel slice definition files (SDFs) for these packages on the `ubuntu-26.04` branch: libi2c0, udev, i2c-tools.
 
 You are in a checkout of canonical/chisel-releases (your current directory). These slices do not exist yet -- create `slices/<package>.yaml` for each of the three packages. Follow the skill's write-slice workflow and the conventions in the skill's shared reference, including any inter-package dependencies between them.
 

@@ -17,7 +17,7 @@ const { parseArgs } = require('node:util');
 const { execSync } = require('node:child_process');
 
 const PKG_ROOT = path.resolve(__dirname, '..');
-const SKILLS_ROOT = path.join(PKG_ROOT, 'mason', 'skills'); // one dir per skill (chisel, ...)
+const SKILLS_ROOT = path.join(PKG_ROOT, 'mason', 'skills'); // one dir per skill (chisel-releases, ...)
 const SHARED_ROOT = path.join(PKG_ROOT, 'mason', '_shared'); // source of truth for every skill's shared/
 const SUPPORTED = ['claude', 'pi', 'copilot', 'opencode', 'codex'];
 

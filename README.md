@@ -56,12 +56,12 @@ Claude code users can alternatively add it as a plugin via the marketplace (`.cl
 
 `mason` is an umbrella kit for chisel / rocks work. each capability area is one self-contained skill
 under `mason/skills/`; the installer copies each per agent (no committed per-agent adapters). today
-there are two: `chisel` (the substance) and `mason` (the `/mason` entry point -- routes a request to the right skill, or prints help).
+there are two: `chisel-releases` (the substance) and `mason` (the `/mason` entry point -- routes a request to the right skill, or prints help).
 
 ```
 mason/
   skills/
-    chisel/                        # a skill -- self-contained, copied verbatim on install
+    chisel-releases/               # a skill -- self-contained, copied verbatim on install
       SKILL.md                     # skill entry + command dispatch
       commands/
         write-slice.md             # author + scaffold tests + self-check + commit
