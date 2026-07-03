@@ -13,6 +13,6 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "26"
-      - uses: astral-sh/setup-uv@v8
+      - uses: astral-sh/setup-uv@v7
       - run: make lint
       - run: make test
