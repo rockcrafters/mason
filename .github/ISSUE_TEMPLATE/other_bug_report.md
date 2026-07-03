@@ -11,7 +11,7 @@ labels: bug
 
 ## repro
 
-<!-- exact command, e.g. `npx github:rockcrafters/mason install --agents claude` -->
+<!-- exact command, e.g. `npx github:rockcrafters/mason install claude` -->
 
 ```
 

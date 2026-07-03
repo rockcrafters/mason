@@ -32,14 +32,17 @@ git checkout ubuntu-26.04 && git checkout -b feat/my-new-slice
 Install the skills into another repo for your agent with `npx`, no clone or npm publish needed:
 
 ```
-npx github:rockcrafters/mason install --agents claude
+npx github:rockcrafters/mason install claude
 ```
 
 ```
---agents <list>   comma-separated: claude, pi, copilot, opencode, codex (default: auto-detect)
+<agents>          required. comma-separated: claude, pi, copilot, opencode, codex;
+                  also: auto (detect agents in target), all (every agent).
+                  duplicates are fine; all wins over everything else.
 --target <dir>    install into <dir> (default: git root, else cwd)
 --dry-run         show what would change, write nothing
 --force           clean reinstall: drop each skill dir, then write it anew
+--update          alias for --force
 --quiet, -q       suppress per-file logs (warnings still print)
 --help, -h        show this help
 ```

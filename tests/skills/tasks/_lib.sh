@@ -44,7 +44,7 @@ _install() {
     case "$PATS_AGENT_KIND" in
         opencode-*) a=opencode ;;
     esac
-    node "$_repo_root/scripts/cli.js" install --agents "$a" --target "$PATS_WORKDIR" --force --quiet
+    node "$_repo_root/scripts/cli.js" install "$a" --target "$PATS_WORKDIR" --force --quiet
 }
 
 # prepare_knockout: stash the real slice as ground truth, then remove it + the

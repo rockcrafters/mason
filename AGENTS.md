@@ -29,4 +29,4 @@ the deterministic scripts are the backbone, so the commands don't rely on the ag
 
 ## install
 
-`npx github:rockcrafters/mason install` copies all skills into the target agent's discovery dirs (see README). adding a capability = a new skill dir under `mason/skills/`.
+`npx github:rockcrafters/mason install <agents>` copies all skills into the target agent's discovery dirs (see README). adding a capability = a new skill dir under `mason/skills/`.

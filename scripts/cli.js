@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // mason cross-agent skill installer. zero-dep.
-//   npx github:rockcrafters/mason install [--agents claude,pi,copilot,opencode]
-//                                         [--target <dir>] [--dry-run] [--force]
+//   npx github:rockcrafters/mason install <list|auto|all>
+//                                         [--target <dir>] [--dry-run] [--force|--update]
 // copies each skill tree (mason/skills/<skill>/) into each agent's skill-discovery
 // dir, materialising the shared reference (mason/_shared/) as <skill>/shared/ so
 // every installed skill is self-contained. opencode also gets real command .md
@@ -42,19 +42,24 @@ const MARKERS = {
 const HELP = `mason -- cross-agent chisel slice skill installer
 
 usage:
-  npx github:rockcrafters/mason install [options]
+  npx github:rockcrafters/mason install <agents> [options]
+
+arguments:
+  <agents>          required. comma-separated: ${SUPPORTED.join(', ')};
+                    also: auto (detect agents in target), all (every agent).
+                    duplicates are fine; all wins over everything else.
 
 options:
-  --agents <list>   comma-separated: ${SUPPORTED.join(', ')} (default: auto-detect)
   --target <dir>    install into <dir> (default: git root, else cwd)
   --dry-run         show what would change, write nothing
   --force           clean reinstall: drop each skill dir, then write it anew
+  --update          alias for --force
   --quiet, -q       suppress per-file logs (warnings still print)
   --help, -h        show this help
 
 examples:
-  npx github:rockcrafters/mason install --agents claude
-  npx github:rockcrafters/mason install --dry-run
+  npx github:rockcrafters/mason install claude
+  npx github:rockcrafters/mason install auto --dry-run
 `;
 
 function gitRoot(dir) {
@@ -71,6 +76,19 @@ function resolveTarget(arg) {
 
 function detectAgents(target) {
   return SUPPORTED.filter((a) => MARKERS[a].some((m) => fs.existsSync(path.join(target, m))));
+}
+
+// expand the agents token list: 'all' short-circuits to every agent, 'auto'
+// expands to whatever detectAgents finds in target, duplicates collapse, and
+// unknown names are dropped silently.
+function resolveAgents(tokens, target) {
+  if (tokens.includes('all')) return [...SUPPORTED];
+  const out = [];
+  for (const t of tokens) {
+    if (t === 'auto') out.push(...detectAgents(target));
+    else if (SUPPORTED.includes(t)) out.push(t);
+  }
+  return [...new Set(out)];
 }
 
 function listFiles(root) {
@@ -132,25 +150,20 @@ function install(opts) {
   const warns = [];
   if (!fs.existsSync(SKILLS_ROOT)) throw new Error(`missing skills payload: ${SKILLS_ROOT}`);
   const skills = listSkills();
-
-  let agents = opts.agents;
-  let source = '--agents';
-  if (!agents.length) {
-    const env = (process.env.MASON_AGENTS || '').split(',').map((s) => s.trim().toLowerCase()).filter((a) => SUPPORTED.includes(a));
-    if (env.length) { agents = env; source = 'MASON_AGENTS'; }
-    else { agents = detectAgents(opts.target); source = 'auto-detect'; }
-  }
-  agents = [...new Set(agents)];
+  const agents = resolveAgents(opts.agents, opts.target);
 
   logs.push(`target: ${opts.target}`);
   logs.push(`skills: ${skills.join(', ')}`);
-  logs.push(`agents: ${agents.join(', ') || '(none)'} [${source}]`);
-  logs.push(`mode: ${opts.dryRun ? 'dry-run' : 'write'}${opts.force ? ', force' : ''}`);
+  logs.push(`agents: ${agents.join(', ') || '(none)'}`);
 
   if (!agents.length) {
-    warns.push('no agents selected or detected. pass --agents to choose.');
-    return { logs, warns };
+    if (opts.agents.includes('auto')) {
+      logs.push('no agent markers found in target; nothing to install.');
+      return { logs, warns };
+    }
+    throw new Error(`no valid agents given. supported: ${SUPPORTED.join(', ')}, auto, all`);
   }
+  logs.push(`mode: ${opts.dryRun ? 'dry-run' : 'write'}${opts.force ? ', force' : ''}`);
 
   for (const agent of agents) {
     logs.push(`-- ${agent} --`);
@@ -194,10 +207,10 @@ function main() {
     ({ values, positionals } = parseArgs({
       allowPositionals: true,
       options: {
-        agents: { type: 'string' },
         target: { type: 'string' },
         'dry-run': { type: 'boolean' },
         force: { type: 'boolean' },
+        update: { type: 'boolean' }, // alias for --force
         quiet: { type: 'boolean', short: 'q' },
         help: { type: 'boolean', short: 'h' },
       },
@@ -208,18 +221,26 @@ function main() {
     process.exit(1);
   }
 
+  // help without an explicit --help is a usage error: bare and unknown-subcommand
+  // invocations both exit 1 so `mason || fail` behaves in scripts.
   if (positionals[0] !== 'install') {
-    process.stdout.write(HELP);
-    process.exit(positionals.length ? 1 : 0);
+    process.stderr.write(HELP);
+    process.exit(1);
   }
 
   const opts = {
     target: resolveTarget(values.target),
-    agents: (values.agents || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean).filter((a) => SUPPORTED.includes(a)),
+    agents: (positionals[1] || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
     dryRun: Boolean(values['dry-run']),
-    force: Boolean(values.force),
+    force: Boolean(values.force || values.update),
     quiet: Boolean(values.quiet),
   };
+
+  if (!opts.agents.length) {
+    process.stderr.write('missing required agents list (e.g. install claude,auto or install all)\n\n');
+    process.stderr.write(HELP);
+    process.exit(1);
+  }
 
   try {
     const { logs, warns } = install(opts);
