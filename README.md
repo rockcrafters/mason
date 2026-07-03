@@ -72,6 +72,11 @@ package.json                       # bin: mason -> scripts/cli.js
 
 Adding a capability = a new skill directory under `mason/skills/`; the installer picks it up automatically.
 
+## testing
+
+Scripts and the installer are covered by pytest and `node --test` (see makefile). The skills
+themselves (prompt-level behaviour) are tested with [pats](https://github.com/lczyk/pats).
+
 ## sources of truth
 
 The skill defers to three upstream projects. When in doubt:
