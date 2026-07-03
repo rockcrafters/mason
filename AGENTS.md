@@ -30,3 +30,5 @@ the deterministic scripts are the backbone, so the commands don't rely on the ag
 ## install
 
 `npx github:rockcrafters/mason install <agents>` copies all skills into the target agent's discovery dirs (see README). adding a capability = a new skill dir under `mason/skills/`.
+
+beyond the agents there's one extra target, `copilot-instructions` (explicit opt-in, never implied by `all`/`auto`): copilot code review reads only `.github/copilot-instructions.md` + `.github/instructions/*.instructions.md`, so the target writes the authored entry file from `mason/copilot-instructions/` and materialises each `mason/_shared/*.md` as `.github/instructions/mason-<name>.instructions.md` with `applyTo` frontmatter prepended.

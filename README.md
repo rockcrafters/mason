@@ -36,9 +36,11 @@ npx github:rockcrafters/mason install claude
 ```
 
 ```
-<agents>          required. comma-separated: claude, pi, copilot, opencode, codex;
+<agents>          required. comma-separated: claude, pi, copilot-cli, opencode, codex;
                   also: auto (detect agents in target), all (every agent).
                   duplicates are fine; all wins over everything else.
+                  extra target: copilot-instructions (see below; never
+                  implied by all/auto).
 --target <dir>    install into <dir> (default: git root, else cwd)
 --dry-run         show what would change, write nothing
 --force           clean reinstall: drop each skill dir, then write it anew
@@ -54,6 +56,23 @@ files and leaves locally-modified ones alone; `--force` drops each known skill d
 fresh (scoped per skill -- foreign skills under the same base survive).
 
 Claude code users can alternatively add it as a plugin via the marketplace (`.claude-plugin/`).
+
+### copilot code review
+
+GitHub Copilot code review (the automatic PR reviewer) never reads `.github/skills/` -- it only
+picks up `.github/copilot-instructions.md` and `.github/instructions/*.instructions.md`. The
+`copilot-instructions` target covers it:
+
+```
+npx github:rockcrafters/mason install copilot-instructions
+```
+
+This writes `.github/copilot-instructions.md` (review conventions and known anti-patterns) and
+materialises every `mason/_shared/*.md` as `.github/instructions/mason-<name>.instructions.md`
+(with an `applyTo` frontmatter), so the reviewer sees the shared reference too. The `mason-`
+prefix namespaces the files; `--force` drops and rewrites only `mason-*.instructions.md`,
+leaving foreign instructions files alone. The target is explicit opt-in -- `all` and `auto`
+never write it.
 
 ## what's in here
 
@@ -84,6 +103,8 @@ mason/
       SKILL.md
   _shared/                         # shared reference, source of truth (format, branch model, schema versions)
     CHISEL.md
+  copilot-instructions/            # entry file for the copilot-instructions install target
+    copilot-instructions.md        # -> .github/copilot-instructions.md (copilot code review)
   .claude-plugin/                  # claude code plugin manifest
 scripts/cli.js                     # the npx installer (installs every skill under mason/skills/)
 tests/scripts/                     # pytest (script checks) + node --test (installer) -- see makefile
