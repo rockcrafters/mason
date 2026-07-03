@@ -35,7 +35,7 @@ test('fresh install lands both skills', () => {
   const t = tmpTarget();
   run(t, ['--agents', 'claude']);
   assert.ok(fs.existsSync(claudeSkill(t, 'mason')));
-  assert.ok(fs.existsSync(claudeSkill(t, 'chisel-releases')));
+  assert.ok(fs.existsSync(claudeSkill(t, 'chisel')));
 });
 
 test('re-install of identical files is up-to-date, no rewrite', () => {
@@ -109,5 +109,5 @@ test('opencode gets a command dispatcher per skill', () => {
   const t = tmpTarget();
   run(t, ['--agents', 'opencode']);
   assert.ok(fs.existsSync(path.join(t, '.opencode', 'command', 'mason.md')));
-  assert.ok(fs.existsSync(path.join(t, '.opencode', 'command', 'chisel-releases.md')));
+  assert.ok(fs.existsSync(path.join(t, '.opencode', 'command', 'chisel.md')));
 });

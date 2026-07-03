@@ -15,7 +15,7 @@ const { parseArgs } = require('node:util');
 const { execSync } = require('node:child_process');
 
 const PKG_ROOT = path.resolve(__dirname, '..');
-const SKILLS_ROOT = path.join(PKG_ROOT, 'mason', 'skills'); // one dir per skill (chisel-releases, ...)
+const SKILLS_ROOT = path.join(PKG_ROOT, 'mason', 'skills'); // one dir per skill (chisel, ...)
 const SUPPORTED = ['claude', 'pi', 'copilot', 'opencode', 'codex'];
 
 // base dir each agent scans for skills, relative to target. each skill installs to <base>/<skill>.

@@ -15,10 +15,10 @@ claude code, pi, opencode, copilot, and codex.
 `/mason` has no actions of its own -- it either routes or prints usage:
 
 - **route** -- if the request clearly maps to a skill below (writing / authoring an SDF or
-  slice, reviewing an SDF -> `chisel-releases`), load that skill's `SKILL.md` from its
-  sibling directory (`../chisel-releases/SKILL.md` relative to this file) and follow its
+  slice, reviewing an SDF -> `chisel`), load that skill's `SKILL.md` from its
+  sibling directory (`../chisel/SKILL.md` relative to this file) and follow its
   dispatch, passing the request through as plain language.
-  e.g. `/mason "please help me write an sdf for foobar"` -> `chisel-releases` write-slice, foobar.
+  e.g. `/mason "please help me write an sdf for foobar"` -> `chisel` write-slice, foobar.
 - **usage** -- no args, "help", or intent not obviously covered by a skill below: print the
   usage block below verbatim, then stop. Do not load or run anything else -- never guess.
 
@@ -26,14 +26,14 @@ claude code, pi, opencode, copilot, and codex.
 mason -- agent kit for chisel / rocks work
 
 skills:
-  /chisel-releases           author + review chisel slice definition files (SDFs)
+  /chisel                    author + review chisel slice definition files (SDFs)
                              against canonical/chisel-releases.
     write-slice <pkg>        author + test + commit an SDF (no PR)
     review-slice <sdf>       read-only review of an SDF
 
 usage:
-  /chisel-releases write-slice <pkg>
-  /chisel-releases review-slice slices/<pkg>.yaml
+  /chisel write-slice <pkg>
+  /chisel review-slice slices/<pkg>.yaml
   or plain language: "write a slice for <pkg>", "review slices/foo.yaml"
 
 docs: https://github.com/rockcrafters/mason
