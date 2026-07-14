@@ -216,7 +216,7 @@ slices:
       /usr/share/doc/<package-name>/copyright:
 ```
 
-**On a v3 branch (`ubuntu-26.04`) every `essential:` must be a map, not a list** -- `chisel cut` rejects the list form with _"essential expects a map"_. Same shape, map keys:
+**On a v3 branch (e.g. `ubuntu-26.04`) every `essential:` must be a map, not a list** -- `chisel cut` rejects the list form with _"essential expects a map"_. Same shape, map keys:
 
 ```yaml
 essential:
@@ -323,7 +323,7 @@ execute: |
 - **Hermetic by default.** Generate inputs (secrets, digests, fixtures) inline; never apt-install extras into the test env. Exception: when the package's function IS the network path (CA bundles, TLS/http clients), hitting one stable well-known endpoint (e.g. `https://example.com`) is accepted upstream -- copy `resolv.conf` in per the chroot patterns table.
 
 **Test hygiene** (recurring review nits):
-- Drop `--arch "$chisel_arch"` from `install-slices` on 26.04 -- it was a v2-era workaround, not needed there. Older branches may still want it.
+- Drop `--arch "$chisel_arch"` from `install-slices` on v3+ branches -- it was a v2-era workaround, not needed post-v2. Older (v1/v2) branches may still want it.
 - Use `"$rootfs"` (no trailing-slash/brace noise), quote every variable, and use bash arrays rather than string-joined args.
 - Assert with `grep -Fiq` (`-F` literal, `-i` case-insensitive, `-q` quiet).
 - No magic `sleep`s or unbounded retry loops -- bound every wait with a timeout so spread can't hang.

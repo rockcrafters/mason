@@ -36,17 +36,19 @@ tests/spread/lib/                              # shared spread helpers
 .github/                                       # workflows + CI scripts
 ```
 
-Active branches grow: 24.04 has ~600 SDFs, 26.04 has ~650.
+Active branches accumulate hundreds of SDFs and keep growing; count a checkout with `ls slices/ | wc -l` (`orientation` prints this).
 
-Live release list: repo [README.md](https://github.com/canonical/chisel-releases/blob/main/README.md).
+Live release list: run `scripts/orientation` -- it discovers the branches, their `format:`, and which are still maintained (end-of-life vs today) -- or the repo [README.md](https://github.com/canonical/chisel-releases/blob/main/README.md).
 
 ## `chisel.yaml` Schema Versions
 
-| Version | Branches | Min chisel | Key additions |
-|---------|----------|------------|---------------|
-| **v1** | `ubuntu-20.04`, `-22.04`, `-24.04` | any | Separate `v2-archives:` for pro/esm |
+A branch's format is a property of *that branch* -- read it from its own `chisel.yaml` `format:` (`orientation` prints it per live branch). The example column below is illustrative, not an exhaustive branch list.
+
+| Version | Branch (e.g.) | Min chisel | Key additions |
+|---------|---------------|------------|---------------|
+| **v1** | `ubuntu-24.04` | any | Separate `v2-archives:` for pro/esm |
 | **v2** | `ubuntu-25.10` | >= v1.2.0 | Pro archives unified under `archives:` via `pro:` subkey. Adds `prefer:` |
-| **v3** | `ubuntu-26.04` | >= v1.4.0 | Adds `hint:` on slices. `essential:` **must** be a map (`<slice>:` / `<slice>: {arch: ...}`) -- the list form is a parse error, and `v3-essential:` is rejected |
+| **v3** | `ubuntu-26.04` and newer | >= v1.4.0 | Adds `hint:` on slices. `essential:` **must** be a map (`<slice>:` / `<slice>: {arch: ...}`) -- the list form is a parse error, and `v3-essential:` is rejected |
 
 (`v3-essential:` -- the arch-gated backport -- is gated by chisel version, >= 1.3.0, not by format; it is valid on v1 and v2 branches alike.)
 
@@ -126,7 +128,7 @@ Some deps only apply on certain arches. How you express that depends on `format:
     dotnet-sdk-aot-10.0_libs: {arch: [amd64, arm64]}
   ```
 
-Every SDF on `ubuntu-26.04` uses the map form, arch-gated or not -- there is no list-form `essential:` on a v3 branch.
+Every SDF on a v3 branch uses the map form, arch-gated or not -- there is no list-form `essential:` on v3.
 
 ### `hint:` style (v3+)
 
