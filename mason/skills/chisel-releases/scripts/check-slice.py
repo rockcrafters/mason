@@ -21,8 +21,9 @@ Usage:
   check-slice.py <slice.yaml> [<slice2.yaml> ...] [--format N | --branch NAME]
 
 Format detection (needed for version-gated fields hint/prefer/v3-essential and
-essential-as-map): --format wins, else --branch maps to a format, else the
-format: field of ./chisel.yaml, else unknown (gated checks are skipped, noted).
+essential-as-map): --format wins, else --branch reads that branch's own
+chisel.yaml from the local git object store, else the format: field of
+./chisel.yaml, else unknown (gated checks are skipped, noted).
 
 Output: one finding per line, `SEVERITY  file: where: message`.
   block  hard gate -- chisel won't parse it, or CI/lint fails. exit code 1.
@@ -35,6 +36,7 @@ Exit code is 1 if any block finding, else 0. Stdlib + pyyaml only; runs under
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -49,12 +51,6 @@ BAD_SLICE_NAMES = {"bin": "bins", "lib": "libs", "all": "core"}
 # Debian arch names -- always lowercase, never x86_64/aarch64. (arch-list order
 # is not enforced: real SDFs use a priority order, not alphabetical.)
 VALID_ARCHES = {"amd64", "arm64", "armhf", "i386", "ppc64el", "riscv64", "s390x"}
-
-# branch -> chisel.yaml format version (mirrors tests/scorers/_lib.py).
-BRANCH_FORMAT = {
-    "ubuntu-20.04": 1, "ubuntu-22.04": 1, "ubuntu-24.04": 1,
-    "ubuntu-25.10": 2, "ubuntu-26.04": 3,
-}
 
 # chisel's own slice-name rule (internal/setup: SnameExp) -- no trailing or
 # doubled hyphens, which a plain charset class would let through.
@@ -276,11 +272,33 @@ def check_v3_essential(doc: Any, fmt: int | None, f: Findings) -> None:
             f.block(f"{name}.essential", f"essential must be a map on v3 (chisel parse error: 'essential expects a map'; format is v{fmt})")
 
 
+def format_of_branch(branch: str) -> int | None:
+    """Resolve a branch's format from *its own* chisel.yaml, read out of the local
+    git object store -- no hardcoded branch->format table, no network. A static
+    linter stays offline and deterministic: `git show <ref>:chisel.yaml`, trying
+    the local ref then origin/<ref> (in a fresh clone the target release is often
+    only a remote-tracking ref, which is exactly the cross-branch case --branch
+    serves). None if the ref/file/format can't be found -- callers treat unknown
+    format by skipping the version-gated checks. Pass --format N to force it."""
+    for ref in (branch, f"origin/{branch}"):
+        try:
+            r = subprocess.run(
+                ["git", "show", f"{ref}:chisel.yaml"],
+                capture_output=True, text=True, timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if r.returncode == 0:
+            m = re.search(r"^format:\s*\"?v?(\d+)", r.stdout, re.M)
+            return int(m.group(1)) if m else None
+    return None
+
+
 def detect_format(argv_fmt: int | None, argv_branch: str | None) -> int | None:
     if argv_fmt is not None:
         return argv_fmt
     if argv_branch:
-        return BRANCH_FORMAT.get(argv_branch)
+        return format_of_branch(argv_branch)
     cy = Path("chisel.yaml")
     if cy.exists():
         try:
@@ -334,7 +352,7 @@ def check_file(path: Path, fmt: int | None) -> Findings:
     check_slices(doc, fmt, f)
     check_v3_essential(doc, fmt, f)
     if fmt is None:
-        f.info("", "format unknown: version-gated checks (hint/prefer/v3-essential/essential-map) skipped -- pass --format or --branch")
+        f.info("", "format unknown: version-gated checks (hint/prefer/v3-essential/essential-map) skipped -- run inside the target checkout, or pass --format N")
     return f
 
 
