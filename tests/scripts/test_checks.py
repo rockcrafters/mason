@@ -87,13 +87,13 @@ def test_check_slice() -> None:
     with tempfile.TemporaryDirectory() as td:
         d = Path(td)
         # list-form essential is the v1/v2 shape; the map form is v3's.
-        out = run("check-slice.py", write(d, "foo.yaml", CLEAN), "--branch", "ubuntu-24.04")
+        out = run("check-slice.py", write(d, "foo.yaml", CLEAN), "--format", "1")
         assert "ok:" in out and "block" not in out, out
-        out = run("check-slice.py", write(d, "foo.yaml", CLEAN_V3), "--branch", "ubuntu-26.04")
+        out = run("check-slice.py", write(d, "foo.yaml", CLEAN_V3), "--format", "3")
         assert "ok:" in out and "block" not in out, out
         # COVER: shape-vs-format gates both ways -- list on v3 and map on v1 are
         # chisel parse errors the linter must block.
-        out = run("check-slice.py", write(d, "foo.yaml", CLEAN), "--branch", "ubuntu-26.04")
+        out = run("check-slice.py", write(d, "foo.yaml", CLEAN), "--format", "3")
         assert "essential must be a map on v3" in out, out
         out = run("check-slice.py", write(d, "foo.yaml", CLEAN_V3), "--format", "1")
         assert "essential-as-map is v3+ only" in out, out
@@ -124,6 +124,137 @@ def test_check_slice() -> None:
         # ...but fine on v1 (no finding).
         out = run("check-slice.py", write(d, "foo.yaml", v3e), "--format", "1")
         assert "v3-essential" not in out, out
+
+
+def test_branch_format_from_git() -> None:
+    # --branch resolves format from that branch's chisel.yaml in the local git
+    # object store (no hardcoded table, no network). Build a throwaway repo whose
+    # committed chisel.yaml is v3, then lint a list-form SDF against --branch.
+    import os
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        (d / "chisel.yaml").write_text("format: v3\n", encoding="utf-8")
+        (d / "foo.yaml").write_text(CLEAN, encoding="utf-8")  # list-form essential
+
+        def git(*a: str) -> None:
+            subprocess.run(
+                ["git", "-C", str(d), "-c", "user.name=t", "-c", "user.email=t@t",
+                 "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", *a],
+                check=True, capture_output=True, env=env,
+            )
+
+        git("init", "-q", "-b", "ubuntu-99.10")
+        git("add", "-A")
+        git("commit", "-qm", "base")
+
+        def lint(branch: str) -> str:
+            r = subprocess.run(
+                [sys.executable, str(SCRIPTS / "check-slice.py"), "foo.yaml", "--branch", branch],
+                cwd=str(d), capture_output=True, text=True, env=env,
+            )
+            return r.stdout + r.stderr
+
+        # v3 resolved from the committed chisel.yaml -> list-form essential blocks.
+        assert "essential must be a map on v3" in lint("ubuntu-99.10"), lint("ubuntu-99.10")
+        # an unknown ref resolves to no format -> gated checks skipped, no crash.
+        out = lint("ubuntu-00.00")
+        assert "essential must be a map on v3" not in out, out
+        assert "format unknown" in out, out
+
+
+def test_branch_format_origin_fallback() -> None:
+    # the real cross-branch case: the target release is only a remote-tracking
+    # ref (no local branch), so format_of_branch must fall back to origin/<branch>.
+    import os
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}
+
+    def git(cwd: Path, *a: str) -> None:
+        subprocess.run(
+            ["git", "-C", str(cwd), "-c", "user.name=t", "-c", "user.email=t@t",
+             "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", *a],
+            check=True, capture_output=True, env=env,
+        )
+
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        origin, clone = d / "origin", d / "clone"
+        origin.mkdir()
+        # origin default branch 'main' (no chisel.yaml) + ubuntu-88.04 at format v3.
+        git(origin, "init", "-q", "-b", "main")
+        (origin / "README").write_text("x", encoding="utf-8")
+        git(origin, "add", "-A")
+        git(origin, "commit", "-qm", "main")
+        git(origin, "checkout", "-q", "-b", "ubuntu-88.04")
+        (origin / "chisel.yaml").write_text("format: v3\n", encoding="utf-8")
+        git(origin, "add", "-A")
+        git(origin, "commit", "-qm", "v3 branch")
+        git(origin, "checkout", "-q", "main")  # leave HEAD on main so the clone omits ubuntu-88.04
+        subprocess.run(["git", "clone", "-q", str(origin), str(clone)],
+                       check=True, capture_output=True, env=env)
+        (clone / "foo.yaml").write_text(CLEAN, encoding="utf-8")  # list-form essential
+
+        # precondition: no LOCAL ubuntu-88.04 -> only origin/ubuntu-88.04 can resolve it.
+        rb = subprocess.run(["git", "-C", str(clone), "rev-parse", "--verify", "-q", "ubuntu-88.04"],
+                            capture_output=True, text=True, env=env)
+        assert rb.returncode != 0, "expected ubuntu-88.04 to be remote-only"
+
+        r = subprocess.run(
+            [sys.executable, str(SCRIPTS / "check-slice.py"), "foo.yaml", "--branch", "ubuntu-88.04"],
+            cwd=str(clone), capture_output=True, text=True, env=env,
+        )
+        out = r.stdout + r.stderr
+        # v3 resolved via origin/ubuntu-88.04 -> list-form essential blocks.
+        assert "essential must be a map on v3" in out, out
+
+
+def test_orientation_release_discovery() -> None:
+    # hermetic end-to-end for the live-release table: point discovery at a local
+    # repo (no network) with a future-eol branch (-> live) and a past-eol branch
+    # (-> EOL). asserts the state column is date-derived and the new local-parse
+    # end-of-life line prints. exercises the set -e paths under a real invocation.
+    import os
+    import re as _re
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        origin, clone = d / "origin", d / "clone"
+        env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null",
+               "MASON_CHISEL_RELEASES_URL": str(origin)}
+
+        def git(cwd: Path, *a: str) -> None:
+            subprocess.run(
+                ["git", "-C", str(cwd), "-c", "user.name=t", "-c", "user.email=t@t",
+                 "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", *a],
+                check=True, capture_output=True, env=env,
+            )
+
+        def manifest(fmt: str, ver: str, eol: str) -> str:
+            return (f"format: {fmt}\narchives:\n  ubuntu:\n    version: '{ver}'\n"
+                    f"    suites: [foo]\nmaintenance:\n  end-of-life: {eol}\n")
+
+        origin.mkdir()
+        git(origin, "init", "-q", "-b", "ubuntu-40.04")
+        (origin / "chisel.yaml").write_text(manifest("v3", "40.04", "2999-01-01"), encoding="utf-8")
+        git(origin, "add", "-A")
+        git(origin, "commit", "-qm", "live lts")
+        git(origin, "checkout", "-q", "-b", "ubuntu-30.10")
+        (origin / "chisel.yaml").write_text(manifest("v2", "30.10", "2000-01-01"), encoding="utf-8")
+        git(origin, "add", "-A")
+        git(origin, "commit", "-qm", "dead interim")
+        git(origin, "checkout", "-q", "ubuntu-40.04")  # HEAD -> the future-eol branch
+        subprocess.run(["git", "clone", "-q", str(origin), str(clone)],
+                       check=True, capture_output=True, env=env)
+
+        r = subprocess.run(["bash", str(SCRIPTS / "orientation")],
+                           cwd=str(clone), capture_output=True, text=True, env=env)
+        out = r.stdout + r.stderr
+        assert r.returncode == 0, out
+        # local parse of the checked-out branch: the new end-of-life line.
+        assert _re.search(r"end-of-life:\s+2999-01-01", out), out
+        # discovery table: state is eol-vs-today, formats normalised, not branch presence.
+        assert "live releases:" in out, out
+        assert _re.search(r"ubuntu-40\.04\s+v3\s+2999-01-01\s+live", out), out
+        assert _re.search(r"ubuntu-30\.10\s+v2\s+2000-01-01\s+EOL", out), out
 
 
 def test_check_test() -> None:

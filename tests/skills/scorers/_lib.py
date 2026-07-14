@@ -11,7 +11,8 @@ plus per *case* (env PATS_TASK_ID):
 
     <case>.task.yaml        the spread test task.yaml the agent wrote (if any)
     <case>.spread.txt       concatenated spread-test bundle text (if any)
-    <case>.branch           the chisel-releases branch (format-version checks)
+    <case>.branch           the chisel-releases branch (recorded at clone time)
+    <case>.format           the branch's manifest format (version-gated checks)
 
 the *targets* are the stems of the `*.expected.yaml` files. single-target cases
 have exactly one; multi-target (denovo) cases have several. per-target scorers
@@ -80,19 +81,15 @@ def expected(t: str) -> Any:
     return load(OUT / f"{t}{_EXP_SUFFIX}")
 
 
-def branch() -> str | None:
-    f = OUT / f"{TASK}.branch"
-    return f.read_text(encoding="utf-8").strip() if f.exists() else None
-
-
-_BRANCH_FORMAT = {
-    "ubuntu-20.04": 1, "ubuntu-22.04": 1, "ubuntu-24.04": 1,
-    "ubuntu-25.10": 2, "ubuntu-26.04": 3,
-}
-
-
 def fmt() -> int | None:
-    return _BRANCH_FORMAT.get(branch() or "")
+    """Manifest format of the case's branch, captured at fixture time (tasks/_lib.sh
+    writes <case>.format from the freshly-cloned chisel.yaml). Derived from the real
+    branch, so it's release-agnostic -- no hardcoded branch->format table to rot."""
+    f = OUT / f"{TASK}.format"
+    if not f.exists():
+        return None
+    m = re.search(r"\d+", f.read_text(encoding="utf-8"))
+    return int(m.group()) if m else None
 
 
 CANONICAL = {

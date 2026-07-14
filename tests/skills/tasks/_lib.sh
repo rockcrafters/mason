@@ -10,13 +10,18 @@ _repo_root="$(cd "$_here/../../.." && pwd)"           # mason repo root (cli.js)
 _cases_dir="$_here/../cases"                          # tests/skills/cases
 
 # _clone: chisel-releases@$BRANCH into the workdir (the agent's cwd), record the
-# branch so format-version scorers can gate on it.
+# branch and its manifest format (parsed from the cloned chisel.yaml) so
+# format-version scorers gate on the real branch, not a hardcoded table.
 _clone() {
     git clone --quiet --depth 1 --branch "$BRANCH" \
         https://github.com/canonical/chisel-releases.git "$PATS_WORKDIR"
     cd "$PATS_WORKDIR"
     mkdir -p "$PATS_OUTPUT_DIR"
     printf '%s\n' "$BRANCH" >"$PATS_OUTPUT_DIR/${PATS_TASK_ID}.branch"
+    # first digit of the format line: "v3" / "chisel-v1" / "1" -> 3 / 1 / 1.
+    local fmt
+    fmt="$(grep -m1 '^format:' chisel.yaml | grep -oE '[0-9]+' | head -n1 || true)"
+    printf '%s\n' "$fmt" >"$PATS_OUTPUT_DIR/${PATS_TASK_ID}.format"
 }
 
 # _reinit_git: rebuild git history so HEAD no longer carries the removed target
