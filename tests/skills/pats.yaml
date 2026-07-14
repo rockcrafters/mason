@@ -5,8 +5,9 @@
 
 sandboxes:
   # one sandbox for every harness: pats auto-allows each harness's own hosts
-  # (anthropic/claude for claude-cli, openrouter/models.dev/npm for opencode),
-  # so the allowlist below is task needs only.
+  # (anthropic/claude for claude-cli, openai/chatgpt for codex-cli,
+  # github/githubcopilot for copilot-cli, openrouter/models.dev/npm for
+  # opencode), so the allowlist below is task needs only.
   #
   # github is allowed, but the canonical/chisel-releases repo is not: the
   # skill's write-slice workflow (Step 2) legitimately wants github (upstream
@@ -49,6 +50,21 @@ agents:
   - id: haiku
     kind: claude-cli-keyless
     model: claude-haiku-4-5-20251001
+    effort: low
+  # small, fast, cost-efficient Codex model; uses the host's ChatGPT login via
+  # ~/.codex/auth.json rather than an API key.
+  - id: codex-mini
+    kind: codex-cli-keyless
+    model: gpt-5.4-mini
+    effort: low
+  # same underlying model as the gpt-5-mini opencode agent below but through
+  # the copilot cli -- isolates harness effect on a shared model, and it's a
+  # 0x-multiplier model on copilot (burns no premium requests). needs
+  # COPILOT_GITHUB_TOKEN in the env at run time:
+  #   env COPILOT_GITHUB_TOKEN=(security find-generic-password -s copilot-cli -w) pats run
+  - id: copilot-mini
+    kind: copilot-cli-keyless
+    model: gpt-5-mini
     effort: low
   # gemini-2.5-flash-lite benched too weak for this skill: broke tool-call
   # namespacing (`default_api.skill`), dumped pseudocode as plain text instead
@@ -199,7 +215,7 @@ scorers:
 # scorer / agent left out of every suite, so nothing silently stops running.
 suites:
   - id: sdf
-    agents: &all-agents [haiku, gpt-mini, qwen3-coder-flash, gpt-5-mini, kimi-k2.5]
+    agents: &all-agents [haiku, codex-mini, copilot-mini, gpt-mini, qwen3-coder-flash, gpt-5-mini, kimi-k2.5]
     tasks:
       - base-passwd
       - ca-certificates

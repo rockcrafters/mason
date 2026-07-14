@@ -1,4 +1,4 @@
-# mason test sandbox: ubuntu + claude cli + chisel + deb tooling.
+# mason test sandbox: ubuntu + agent clis + chisel + deb tooling.
 # modelled on ~/git/pats images/Dockerfile.sandbox-26.04, plus what the
 # chisel-releases skill needs at runtime: python3 + dpkg-deb (deb-list) and
 # the chisel binary (try-cut).
@@ -23,10 +23,14 @@ RUN apt-get update && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 ARG CLAUDE_CLI_VERSION=latest
+ARG CODEX_CLI_VERSION=latest
 ARG OPENCODE_VERSION=latest
+ARG COPILOT_CLI_VERSION=latest
 RUN npm install -g \
         "@anthropic-ai/claude-code@${CLAUDE_CLI_VERSION}" \
-        "opencode-ai@${OPENCODE_VERSION}" && \
+        "@openai/codex@${CODEX_CLI_VERSION}" \
+        "opencode-ai@${OPENCODE_VERSION}" \
+        "@github/copilot@${COPILOT_CLI_VERSION}" && \
     npm cache clean --force
 
 # chisel: latest release binary for the build arch (try-cut needs it).
