@@ -1,0 +1,17 @@
+# self-installs from running `npx . install` against this repo
+/.claude/skills/
+/.pi/
+/.codex/
+/.opencode/
+/.github/skills/
+
+# skill shared/ dirs are materialised from mason/_shared/ by cli.js at install;
+# only mason/_shared/ is the committed source of truth
+/mason/skills/*/shared/
+
+node_modules/
+.DS_Store
+__pycache__/
+
+# pats run artifacts
+/tests/skills/.pats/

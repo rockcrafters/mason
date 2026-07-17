@@ -1,0 +1,6 @@
+{
+  "name": "rockcrafters/mason",
+  "version": "0.1.0",
+  "description": "Agent kit for working on canonical/chisel-releases. Cross-agent skills + scripts for authoring and reviewing chisel slice definition files.",
+  "private": false
+}

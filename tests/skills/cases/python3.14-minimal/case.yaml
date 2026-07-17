@@ -1,0 +1,3 @@
+name: python3.14-minimal
+package: python3.14-minimal
+branch: ubuntu-26.04

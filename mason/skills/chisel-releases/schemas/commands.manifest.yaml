@@ -1,0 +1,23 @@
+version: 1
+skill: chisel-releases
+summary: Cross-agent skill for authoring and reviewing chisel slice definition files (SDFs).
+
+# shared reference loaded before any command. paths are relative to this
+# skill's directory (the one holding SKILL.md) so the skill stays
+# self-contained wherever it is installed.
+shared:
+  reference:
+    module: shared/CHISEL.md
+    description: chisel/SDF format, branch model, schema versions, naming, sources of truth.
+
+commands:
+  - name: write-slice
+    file: commands/write-slice.md
+    stage: active
+    description: Author + test + commit chisel SDFs locally. Does not open PRs.
+  - name: review-slice
+    file: commands/review-slice.md
+    stage: active
+    description: Read-only review of SDFs against chisel conventions, CI checks, and forward-port rules.
+
+futureCommands: []

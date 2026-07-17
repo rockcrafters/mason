@@ -1,0 +1,16 @@
+package: freeipmi-common
+
+essential:
+  - freeipmi-common_copyright
+
+slices:
+  config:
+    contents:
+      /etc/freeipmi/freeipmi.conf:
+      /etc/freeipmi/freeipmi_interpret_sel.conf:
+      /etc/freeipmi/freeipmi_interpret_sensor.conf:
+      /etc/freeipmi/libipmiconsole.conf:
+
+  copyright:
+    contents:
+      /usr/share/doc/freeipmi-common/copyright:

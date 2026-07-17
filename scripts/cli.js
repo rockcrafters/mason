@@ -1,0 +1,303 @@
+#!/usr/bin/env node
+// mason cross-agent skill installer. zero-dep.
+//   npx github:rockcrafters/mason install <list|auto|all>
+//                                         [--target <dir>] [--dry-run] [--force|--update]
+// copies each skill tree (mason/skills/<skill>/) into each agent's skill-discovery
+// dir, materialising the shared reference (mason/_shared/) as <skill>/shared/ so
+// every installed skill is self-contained. opencode also gets real command .md
+// files for its loader. the extra 'copilot-instructions' target (never implied
+// by all/auto) writes .github/copilot-instructions.md and materialises
+// mason/_shared/ as .github/instructions/mason-*.instructions.md for copilot
+// code review.
+// NOTE: no install-state tracking -- re-install skips files that differ from
+// source (warns to use --force) and never silently clobbers local edits.
+// --force is a clean per-skill reinstall: it drops <base>/<skill> then rewrites,
+// so stale files vanish. scoped to the skill dir, never the whole skills base.
+
+const fs = require('node:fs');
+const path = require('node:path');
+const { parseArgs } = require('node:util');
+const { execSync } = require('node:child_process');
+
+const PKG_ROOT = path.resolve(__dirname, '..');
+const SKILLS_ROOT = path.join(PKG_ROOT, 'mason', 'skills'); // one dir per skill (chisel-releases, ...)
+const SHARED_ROOT = path.join(PKG_ROOT, 'mason', '_shared'); // source of truth for every skill's shared/
+const COPILOT_INSTRUCTIONS_ROOT = path.join(PKG_ROOT, 'mason', 'copilot-instructions');
+const SUPPORTED = ['claude', 'pi', 'copilot-cli', 'opencode', 'codex'];
+// non-agent install targets, explicit opt-in only: never part of 'all' or 'auto'.
+const EXTRAS = ['copilot-instructions'];
+
+// base dir each agent scans for skills, relative to target. each skill installs to <base>/<skill>.
+const SKILL_BASE = {
+  claude: '.claude/skills',
+  pi: '.pi/skills',
+  'copilot-cli': '.github/skills',
+  opencode: '.opencode/skills',
+  codex: '.codex/skills',
+};
+
+// marker paths whose presence in target implies the agent is in use.
+const MARKERS = {
+  claude: ['.claude', 'CLAUDE.md'],
+  pi: ['.pi'],
+  'copilot-cli': ['.github/copilot-instructions.md', '.github/prompts'],
+  opencode: ['opencode.json', '.opencode'],
+  codex: ['.codex'],
+};
+
+const HELP = `mason -- cross-agent chisel slice skill installer
+
+usage:
+  npx github:rockcrafters/mason install <agents> [options]
+
+arguments:
+  <agents>          required. comma-separated: ${SUPPORTED.join(', ')};
+                    also: auto (detect agents in target), all (every agent).
+                    duplicates are fine; all wins over everything else.
+                    extra target: copilot-instructions (writes
+                    .github/copilot-instructions.md + .github/instructions/
+                    for copilot code review; never implied by all/auto).
+
+options:
+  --target <dir>    install into <dir> (default: git root, else cwd)
+  --dry-run         show what would change, write nothing
+  --force           clean reinstall: drop each skill dir, then write it anew
+  --update          alias for --force
+  --quiet, -q       suppress per-file logs (warnings still print)
+  --help, -h        show this help
+
+examples:
+  npx github:rockcrafters/mason install claude
+  npx github:rockcrafters/mason install auto --dry-run
+`;
+
+function gitRoot(dir) {
+  try {
+    return execSync('git rev-parse --show-toplevel', { cwd: dir, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null;
+  } catch { return null; }
+}
+
+function resolveTarget(arg) {
+  if (arg) return path.resolve(arg);
+  const start = path.resolve(process.env.INIT_CWD || process.cwd());
+  return gitRoot(start) || start;
+}
+
+function detectAgents(target) {
+  return SUPPORTED.filter((a) => MARKERS[a].some((m) => fs.existsSync(path.join(target, m))));
+}
+
+// expand the agents token list: 'all' short-circuits to every agent, 'auto'
+// expands to whatever detectAgents finds in target, duplicates collapse, and
+// unknown names are dropped silently.
+function resolveAgents(tokens, target) {
+  if (tokens.includes('all')) return [...SUPPORTED];
+  const out = [];
+  for (const t of tokens) {
+    if (t === 'auto') out.push(...detectAgents(target));
+    else if (SUPPORTED.includes(t)) out.push(t);
+  }
+  return [...new Set(out)];
+}
+
+function listFiles(root) {
+  const out = [];
+  for (const e of fs.readdirSync(root, { withFileTypes: true })) {
+    const p = path.join(root, e.name);
+    if (e.isDirectory()) out.push(...listFiles(p));
+    else if (e.isFile()) out.push(p);
+  }
+  return out;
+}
+
+// returns 'write' | 'skip' | 'conflict'
+function plan(srcContent, dst, force) {
+  if (!fs.existsSync(dst)) return 'write';
+  const cur = fs.readFileSync(dst);
+  if (cur.equals(srcContent)) return 'skip';
+  return force ? 'write' : 'conflict';
+}
+
+function placeFile(srcContent, dst, opts, logs, warns, mode) {
+  const rel = path.relative(opts.target, dst);
+  const action = plan(srcContent, dst, opts.force);
+  if (action === 'skip') { logs.push(`up-to-date: ${rel}`); return; }
+  if (action === 'conflict') { warns.push(`differs (use --force): ${rel}`); return; }
+  if (opts.dryRun) { logs.push(`would write: ${rel}`); return; }
+  fs.mkdirSync(path.dirname(dst), { recursive: true });
+  fs.writeFileSync(dst, srcContent);
+  if (mode !== undefined) fs.chmodSync(dst, mode); // preserve +x so scripts/ run when invoked by path
+  logs.push(`wrote: ${rel}`);
+}
+
+// --force does a clean reinstall of one skill: drop <base>/<skill> then write anew,
+// so files removed from source don't linger. scoped to the skill dir -- sibling
+// skills (and anything else under the skills base) are left untouched.
+function wipeSkill(dir, opts, logs) {
+  if (!fs.existsSync(dir)) return;
+  const rel = path.relative(opts.target, dir);
+  if (opts.dryRun) { logs.push(`would drop: ${rel}/`); return; }
+  fs.rmSync(dir, { recursive: true, force: true });
+  logs.push(`dropped: ${rel}/`);
+}
+
+function copyTree(srcRoot, dstRoot, opts, logs, warns) {
+  for (const src of listFiles(srcRoot)) {
+    const dst = path.join(dstRoot, path.relative(srcRoot, src));
+    placeFile(fs.readFileSync(src), dst, opts, logs, warns, fs.statSync(src).mode);
+  }
+}
+
+function listSkills() {
+  return fs.readdirSync(SKILLS_ROOT, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && fs.existsSync(path.join(SKILLS_ROOT, e.name, 'SKILL.md')))
+    .map((e) => e.name);
+}
+
+// copilot code review reads .github/copilot-instructions.md plus
+// .github/instructions/*.instructions.md (scoped by applyTo frontmatter) -- it
+// never sees .github/skills/, hence this separate target. the entry file is
+// copied verbatim; every mason/_shared/*.md is materialised as an instructions
+// file with frontmatter prepended, so new shared references are picked up
+// automatically. dest names get a mason- prefix: it namespaces our files among
+// foreign .instructions.md and scopes the --force wipe.
+const INSTRUCTIONS_FRONTMATTER = '---\napplyTo: "**"\n---\n\n';
+
+function wipeInstructions(dir, opts, logs) {
+  if (!fs.existsSync(dir)) return;
+  for (const f of fs.readdirSync(dir)) {
+    if (!f.startsWith('mason-') || !f.endsWith('.instructions.md')) continue;
+    const rel = path.relative(opts.target, path.join(dir, f));
+    if (opts.dryRun) { logs.push(`would drop: ${rel}`); continue; }
+    fs.rmSync(path.join(dir, f));
+    logs.push(`dropped: ${rel}`);
+  }
+}
+
+function installCopilotInstructions(opts, logs, warns) {
+  logs.push('-- copilot-instructions --');
+  const entry = path.join(COPILOT_INSTRUCTIONS_ROOT, 'copilot-instructions.md');
+  placeFile(fs.readFileSync(entry), path.join(opts.target, '.github', 'copilot-instructions.md'), opts, logs, warns);
+  const instrDir = path.join(opts.target, '.github', 'instructions');
+  if (opts.force) wipeInstructions(instrDir, opts, logs);
+  if (!fs.existsSync(SHARED_ROOT)) return;
+  for (const src of listFiles(SHARED_ROOT)) {
+    if (!src.endsWith('.md')) continue;
+    const rel = path.relative(SHARED_ROOT, src);
+    const name = `mason-${rel.replace(/\.md$/, '').split(path.sep).join('-')}.instructions.md`;
+    const content = Buffer.concat([Buffer.from(INSTRUCTIONS_FRONTMATTER), fs.readFileSync(src)]);
+    placeFile(content, path.join(instrDir, name), opts, logs, warns);
+  }
+}
+
+function install(opts) {
+  const logs = [];
+  const warns = [];
+  if (!fs.existsSync(SKILLS_ROOT)) throw new Error(`missing skills payload: ${SKILLS_ROOT}`);
+  const skills = listSkills();
+  const agents = resolveAgents(opts.agents, opts.target);
+  const extras = EXTRAS.filter((e) => opts.agents.includes(e));
+
+  logs.push(`target: ${opts.target}`);
+  logs.push(`skills: ${skills.join(', ')}`);
+  logs.push(`agents: ${agents.join(', ') || '(none)'}`);
+  if (extras.length) logs.push(`extras: ${extras.join(', ')}`);
+
+  if (!agents.length && !extras.length) {
+    if (opts.agents.includes('auto')) {
+      logs.push('no agent markers found in target; nothing to install.');
+      return { logs, warns };
+    }
+    throw new Error(`no valid agents given. supported: ${SUPPORTED.join(', ')}, auto, all, ${EXTRAS.join(', ')}`);
+  }
+  logs.push(`mode: ${opts.dryRun ? 'dry-run' : 'write'}${opts.force ? ', force' : ''}`);
+
+  for (const agent of agents) {
+    logs.push(`-- ${agent} --`);
+    for (const skill of skills) {
+      const src = path.join(SKILLS_ROOT, skill);
+      const dstRoot = path.join(opts.target, SKILL_BASE[agent], skill);
+      if (opts.force) wipeSkill(dstRoot, opts, logs);
+      copyTree(src, dstRoot, opts, logs, warns);
+      // NOTE: every skill gets the whole shared/ tree; per-skill opt-out only if
+      // a skill ever must not carry it.
+      if (fs.existsSync(SHARED_ROOT)) copyTree(SHARED_ROOT, path.join(dstRoot, 'shared'), opts, logs, warns);
+      if (agent === 'opencode') {
+        // single dispatcher so `/<skill> <subcmd>` works like in claude
+        const dispatcher = Buffer.from(
+          `---
+description: ${skill} skill
+---
+
+Use the ${skill} skill. Sub-command: $ARGUMENTS
+`);
+        placeFile(dispatcher, path.join(opts.target, '.opencode/command', `${skill}.md`), opts, logs, warns);
+      }
+      // pi loads the skill natively from .pi/skills/<skill>/ -- no extra prompt command needed.
+    }
+  }
+  if (extras.includes('copilot-instructions')) installCopilotInstructions(opts, logs, warns);
+  return { logs, warns };
+}
+
+function main() {
+  const argv = process.argv.slice(2);
+
+  // help wins over everything, even alongside malformed args.
+  if (argv.includes('-h') || argv.includes('--help')) {
+    process.stdout.write(HELP);
+    process.exit(0);
+  }
+
+  let values;
+  let positionals;
+  try {
+    ({ values, positionals } = parseArgs({
+      allowPositionals: true,
+      options: {
+        target: { type: 'string' },
+        'dry-run': { type: 'boolean' },
+        force: { type: 'boolean' },
+        update: { type: 'boolean' }, // alias for --force
+        quiet: { type: 'boolean', short: 'q' },
+        help: { type: 'boolean', short: 'h' },
+      },
+    }));
+  } catch (e) {
+    process.stderr.write(`${e.message}\n\n`);
+    process.stderr.write(HELP);
+    process.exit(1);
+  }
+
+  // help without an explicit --help is a usage error: bare and unknown-subcommand
+  // invocations both exit 1 so `mason || fail` behaves in scripts.
+  if (positionals[0] !== 'install') {
+    process.stderr.write(HELP);
+    process.exit(1);
+  }
+
+  const opts = {
+    target: resolveTarget(values.target),
+    agents: (positionals[1] || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
+    dryRun: Boolean(values['dry-run']),
+    force: Boolean(values.force || values.update),
+    quiet: Boolean(values.quiet),
+  };
+
+  if (!opts.agents.length) {
+    process.stderr.write('missing required agents list (e.g. install claude,auto or install all)\n\n');
+    process.stderr.write(HELP);
+    process.exit(1);
+  }
+
+  try {
+    const { logs, warns } = install(opts);
+    if (!opts.quiet) for (const l of logs) process.stdout.write(`${l}\n`);
+    for (const w of warns) process.stderr.write(`warning: ${w}\n`);
+  } catch (e) {
+    process.stderr.write(`install failed: ${e.message}\n`);
+    process.exit(1);
+  }
+}
+
+main();

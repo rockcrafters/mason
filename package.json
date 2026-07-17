@@ -1,0 +1,30 @@
+{
+  "name": "mason",
+  "version": "0.1.0",
+  "description": "Cross-agent skill installer for authoring and reviewing chisel slice definition files (SDFs).",
+  "license": "Apache-2.0",
+  "type": "commonjs",
+  "bin": {
+    "mason": "scripts/cli.js"
+  },
+  "scripts": {
+    "test": "node --test tests/scripts/*.test.js"
+  },
+  "files": [
+    "scripts/cli.js",
+    "mason",
+    ".claude-plugin",
+    "README.md"
+  ],
+  "keywords": [
+    "chisel",
+    "skill",
+    "claude",
+    "pi",
+    "opencode",
+    "copilot"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

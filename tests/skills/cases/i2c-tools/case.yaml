@@ -1,0 +1,8 @@
+name: i2c-tools
+kind: denovo
+package: i2c-tools
+branch: ubuntu-26.04
+targets:
+  - libi2c0
+  - udev
+  - i2c-tools
