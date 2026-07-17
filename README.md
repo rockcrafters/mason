@@ -7,6 +7,7 @@
 [![Ubuntu](https://img.shields.io/badge/Ubuntu-E95420?logo=ubuntu&logoColor=white)](#)
 [![rocks](https://img.shields.io/badge/%F0%9F%AA%A8-rocks-E95420)](https://ubuntu.com/server/docs/explanation/virtualisation/about-rock-images/)
 [![test](https://github.com/rockcrafters/mason/actions/workflows/test.yml/badge.svg)](https://github.com/rockcrafters/mason/actions/workflows/test.yml)
+[![tessl](https://img.shields.io/endpoint?url=https%3A%2F%2Fapi.tessl.io%2Fv1%2Fbadges%2Frockcrafters%2Fmason)](https://tessl.io/registry/rockcrafters/mason)
 
 Tribal knowledge about [`rocks`](https://documentation.ubuntu.com/rockcraft/stable/explanation/rocks/), [`rockcraft`](https://documentation.ubuntu.com/rockcraft/latest/), [`chisel`](https://github.com/canonical/chisel), [`chisel-releases`](https://github.com/canonical/chisel-releases), and slice definition files (SDFs).
 
